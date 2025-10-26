@@ -1,15 +1,8 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import yaml
-import os
+from ats_oss.config import settings
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CONFIG_PATH = os.path.join(PROJECT_ROOT, "ats_oss", "config", "config.yaml")
-
-with open(CONFIG_PATH, "r") as f:
-    config = yaml.safe_load(f)
-
-DATABASE_URL = config["database"]["dsn"]
+DATABASE_URL = settings.database_url
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -6,6 +6,7 @@ sqlalchemy
 pyyaml
 ffmpeg-python
 pyloudnorm
+soundfile
 numpy
 scipy
 pyqt6

@@ -9,8 +9,9 @@ class WorkflowBase(BaseModel):
     template_name: Optional[str] = None
 
 
-class WorkflowCreate(WorkflowBase):
-    pass
+class WorkflowCreate(BaseModel):
+    template_name: str
+    input_uri: str
 
 
 class Workflow(WorkflowBase):

@@ -15,11 +15,10 @@ STEP_REGISTRY = {
     "normalize": normalize.run,
 }
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WORKFLOWS_DIR = os.path.join(PROJECT_ROOT, "ats_oss", "workflows")
+from ats_oss.config import settings
 
 def load_workflow_template(template_name: str):
-    template_path = os.path.join(WORKFLOWS_DIR, f"{template_name}.yaml")
+    template_path = settings.workflows_dir / f"{template_name}.yaml"
     logging.info(f"Loading workflow template from: {template_path}")
     with open(template_path, "r") as f:
         return yaml.safe_load(f)
