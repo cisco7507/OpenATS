@@ -13,3 +13,4 @@ pyqt6
 python-multipart
 prometheus-client
 requests
+Pillow
