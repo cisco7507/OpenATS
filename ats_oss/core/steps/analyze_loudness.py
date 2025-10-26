@@ -6,7 +6,7 @@ def run(context: dict, params: dict):
     """
     Analyzes the loudness and peak of an audio file.
     """
-    print("\n\n--- EXECUTING LOUDNESS STEP (VERSION 3.0 - CORRECTED) ---\n\n")
+    print("\n\n--- EXECUTING LOUDNESS STEP (VERSION 4.0 - DEFINITIVE FIX) ---\n\n")
     input_uri = context["input_uri"]
 
     try:
@@ -18,20 +18,17 @@ def run(context: dict, params: dict):
     meter = pyln.Meter(rate)
 
     # --- Core Metrics ---
-    # Calculate integrated loudness - this is the primary function of the library
     integrated_lufs = meter.integrated_loudness(data)
 
+    # Correctly call loudness_range as a standalone function
+    lra = pyln.loudness_range(data)
+
     # --- Peak Measurement ---
-    # A full true-peak implementation requires oversampling.
-    # We will use a numpy-based peak measurement as a close approximation.
     peak_dbfs = 20 * np.log10(np.max(np.abs(data)))
 
     print(f"Loudness Analysis Complete: "
-          f"Integrated={integrated_lufs:.2f} LUFS, Peak={peak_dbfs:.2f} dBFS")
+          f"Integrated={integrated_lufs:.2f} LUFS, LRA={lra:.2f}, Peak={peak_dbfs:.2f} dBFS")
 
-    lra = meter.loudness_range(data)
-
-    # Return only the metrics we can reliably calculate
     return {
         "integrated_lufs": integrated_lufs,
         "peak_dbfs": peak_dbfs,
