@@ -28,5 +28,10 @@ class Config:
     def max_workers(self):
         return self.config["workers"]["threads"]
 
+    @property
+    def data_root(self):
+        # Resolve the data_root relative to the project root
+        return self.project_root / self.config["paths"]["data_root"]
+
 # Create a singleton instance
 settings = Config()

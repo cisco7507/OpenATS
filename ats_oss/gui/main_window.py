@@ -70,7 +70,16 @@ class MainWindow(QMainWindow):
             if response.status_code == 200:
                 import json
                 details = response.json()
-                self.workflow_details.setText(json.dumps(details, indent=2))
+
+                # Check for an output URI and highlight it
+                output_uri = details.get("output_uri")
+                display_text = json.dumps(details, indent=2)
+
+                if output_uri:
+                    header = f"--- Output File ---\n{output_uri}\n\n--- Full Details ---\n"
+                    display_text = header + display_text
+
+                self.workflow_details.setText(display_text)
             else:
                 self.workflow_details.setText(f"Error fetching details: {response.text}")
         except requests.exceptions.RequestException as e:

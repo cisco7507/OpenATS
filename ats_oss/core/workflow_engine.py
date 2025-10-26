@@ -77,7 +77,11 @@ def run_workflow(workflow_id: str):
         logging.info(f"Workflow {workflow_id} state set to RUNNING.")
 
         steps = sorted(workflow.steps, key=lambda s: s.index)
-        step_context = {"input_uri": workflow.input_uri}
+        # Add workflow_id to the context for steps to use
+        step_context = {
+            "workflow_id": workflow.id,
+            "input_uri": workflow.input_uri
+        }
 
         for step in steps:
             step.state = constants.STATE_RUNNING
@@ -93,9 +97,25 @@ def run_workflow(workflow_id: str):
                 # Pass the context and params to the step function
                 result_context = step_func(context=step_context, params=step.params)
 
-                # Update context for the next step
-                step_context.update(result_context)
+                # --- Update context and record artifacts ---
+                new_output_uri = result_context.get("output_uri")
+                if new_output_uri:
+                    # Create an artifact record for the new file
+                    artifact = models.Artifact(
+                        workflow_id=workflow.id,
+                        step_id=step.id,
+                        uri=new_output_uri,
+                        # In a real implementation, we'd get size and type
+                    )
+                    db.add(artifact)
 
+                    # Update the main workflow's output URI
+                    workflow.output_uri = new_output_uri
+
+                    # The new file becomes the input for the next step
+                    result_context["input_uri"] = new_output_uri
+
+                step_context.update(result_context)
                 step.state = constants.STATE_COMPLETED
                 logging.info(f"Step {step.index} ({step.type}) completed.")
             except Exception as e:
