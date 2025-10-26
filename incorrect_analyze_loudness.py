@@ -7,7 +7,6 @@ def run(context: dict, params: dict):
     Analyzes the loudness of an audio file using pyloudnorm, calculating a full
     suite of EBU R128 metrics.
     """
-    print("\n\n--- EXECUTING LOUDNESS STEP (VERSION 2.0) ---\n\n")
     input_uri = context["input_uri"]
 
     try:
@@ -20,7 +19,7 @@ def run(context: dict, params: dict):
 
     # --- EBU R128 Metrics ---
     integrated_lufs = meter.integrated_loudness(data)
-    lra = pyln.loudness_range(data)
+    lra = meter.loudness_range(data)
 
     # Short-term and momentary require manual calculation over sliding windows.
     # Pyloudnorm does not provide a direct API for max values, so we'll simulate it.
