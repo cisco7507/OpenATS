@@ -10,9 +10,14 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 # A simple registry to map step types to functions
+from .steps import transcode, qc_basic
+from . import reporting
+
 STEP_REGISTRY = {
     "analyze_loudness": analyze_loudness.run,
     "normalize": normalize.run,
+    "transcode": transcode.run,
+    "qc_basic": qc_basic.run,
 }
 
 from ats_oss.config import settings
@@ -131,9 +136,23 @@ def run_workflow(workflow_id: str):
             step.elapsed_sec = (step.finished_at - step.started_at).seconds
             db.commit()
 
+        # --- Finalize and Generate Report ---
         workflow.state = constants.STATE_COMPLETED
         workflow.finished_at = datetime.utcnow()
         workflow.elapsed_sec = (workflow.finished_at - workflow.started_at).seconds
+
+        # Generate the JSON report from the final context
+        output_dir = settings.data_root / str(workflow_id)
+        report_path = reporting.save_json_report(step_context, output_dir)
+
+        # Create an artifact for the report itself
+        report_artifact = models.Artifact(
+            workflow_id=workflow.id,
+            type="report",
+            uri=report_path
+        )
+        db.add(report_artifact)
+
         db.commit()
         logging.info(f"Workflow {workflow_id} completed successfully.")
     except Exception as e:

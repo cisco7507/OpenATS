@@ -41,11 +41,6 @@ def run(context: dict, params: dict):
             .run(capture_stdout=True, capture_stderr=True)
         )
         print(f"Normalized file saved to: {output_path}")
-    except FileNotFoundError:
-        # If the input file is not found (as is the case in the test env),
-        # we log it but create a dummy output file to allow the workflow to proceed.
-        print(f"WARNING: Input file '{input_uri}' not found. Creating dummy output file.")
-        output_path.touch() # Create an empty file
     except ffmpeg.Error as e:
         # This will catch errors from the ffmpeg command itself
         stderr = e.stderr.decode('utf8')
