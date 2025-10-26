@@ -1,0 +1,29 @@
+server:
+  bind: "127.0.0.1"
+  port: 8650
+  cors: false
+  enable_docs: true
+
+auth:
+  jwt_secret: "CHANGE_ME"
+  token_ttl_min: 1440
+
+database:
+  driver: "sqlite"
+  dsn: "sqlite:///ats_oss.db"
+
+paths:
+  ffmpeg_bin: ""
+  data_root: "./data"
+  logs_root: "./logs"
+  temp_root: "./temp"
+
+workers:
+  mode: "threads"
+  threads: 4
+  redis_url: "redis://localhost:6379/0"
+
+loudness:
+  target_lufs: -23.0
+  max_truepeak_db: -2.0
+  lra_limit: 11.0

@@ -1,0 +1,7 @@
+name: Normalize_and_QC
+steps:
+  - type: analyze_loudness
+  - type: normalize
+    params:
+      target_lufs: -23.0
+      max_truepeak_db: -2.0
