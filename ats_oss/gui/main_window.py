@@ -194,11 +194,13 @@ class MainWindow(QMainWindow):
 
     def browse_file(self):
         """Opens a file dialog to select an audio file."""
+        options = QFileDialog.Option.DontUseNativeDialog
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select an Audio File",
             "", # Start directory
-            "Audio Files (*.wav *.mp3 *.flac *.aac);;All Files (*)"
+            "Audio Files (*.wav *.mp3 *.flac *.aac);;All Files (*)",
+            options=options
         )
         if file_path:
             self.input_uri_input.setText(file_path)
