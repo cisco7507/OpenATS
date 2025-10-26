@@ -19,7 +19,7 @@ def run(context: dict, params: dict):
 
     # --- EBU R128 Metrics ---
     integrated_lufs = meter.integrated_loudness(data)
-    lra = meter.loudness_range(data)
+    lra = pyln.loudness_range(data)
 
     # Short-term and momentary require manual calculation over sliding windows.
     # Pyloudnorm does not provide a direct API for max values, so we'll simulate it.

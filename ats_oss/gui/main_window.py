@@ -2,7 +2,7 @@ import requests
 from PyQt6.QtWidgets import (
     QMainWindow, QLabel, QVBoxLayout, QWidget, QTabWidget, QTreeWidget,
     QTreeWidgetItem, QLineEdit, QPushButton, QMessageBox, QFormLayout, QTextEdit,
-    QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView
+    QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView, QComboBox
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -129,8 +129,9 @@ class MainWindow(QMainWindow):
         """Sets up the layout and widgets for the Submit tab."""
         layout = QFormLayout(self.submit_tab)
 
-        self.template_name_input = QLineEdit("normalize_and_qc")
-        layout.addRow("Workflow Template:", self.template_name_input)
+        self.template_combo = QComboBox()
+        layout.addRow("Workflow Template:", self.template_combo)
+        self.populate_workflows()
 
         # Create a horizontal layout for the file input and browse button
         file_input_layout = QHBoxLayout()
@@ -140,11 +141,47 @@ class MainWindow(QMainWindow):
         file_input_layout.addWidget(self.browse_button)
         layout.addRow("Input File URI:", file_input_layout)
 
+        # --- Dynamic Transcode Parameters ---
+        self.transcode_params_widget = QWidget()
+        transcode_layout = QFormLayout(self.transcode_params_widget)
+
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["wav", "flac", "aac", "opus"])
+        self.sample_rate_input = QLineEdit("48000")
+        self.bit_depth_input = QLineEdit("24")
+
+        transcode_layout.addRow("Format:", self.format_combo)
+        transcode_layout.addRow("Sample Rate:", self.sample_rate_input)
+        transcode_layout.addRow("Bit Depth (if applicable):", self.bit_depth_input)
+
+        layout.addRow(self.transcode_params_widget)
+        self.transcode_params_widget.setVisible(False) # Hidden by default
+
         self.submit_button = QPushButton("Submit Workflow")
         layout.addRow(self.submit_button)
 
         self.browse_button.clicked.connect(self.browse_file)
         self.submit_button.clicked.connect(self.submit_workflow)
+        self.template_combo.currentTextChanged.connect(self.on_workflow_selected)
+
+    def on_workflow_selected(self, workflow_name):
+        """Shows or hides dynamic fields based on the selected workflow."""
+        if "transcode" in workflow_name.lower():
+            self.transcode_params_widget.setVisible(True)
+        else:
+            self.transcode_params_widget.setVisible(False)
+
+    def populate_workflows(self):
+        """Scans the workflows directory and populates the dropdown."""
+        from ats_oss.config import settings
+        import os
+        try:
+            workflow_files = [f for f in os.listdir(settings.workflows_dir) if f.endswith('.yaml')]
+            # Get the name without the extension
+            workflow_names = [os.path.splitext(f)[0] for f in workflow_files]
+            self.template_combo.addItems(workflow_names)
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Config Error", "Workflows directory not found.")
 
     def remove_selected_workflow(self):
         """Removes all selected, completed workflows from the system."""
@@ -207,14 +244,26 @@ class MainWindow(QMainWindow):
 
     def submit_workflow(self):
         """Handles the submission of a new workflow."""
-        template_name = self.template_name_input.text()
+        template_name = self.template_combo.currentText()
         input_uri = self.input_uri_input.text()
 
         if not template_name or not input_uri:
             QMessageBox.warning(self, "Input Error", "Both fields are required.")
             return
 
-        payload = {"template_name": template_name, "input_uri": input_uri}
+        params = {}
+        if "transcode" in template_name.lower():
+            params = {
+                "format": self.format_combo.currentText(),
+                "sample_rate": int(self.sample_rate_input.text()),
+                "bit_depth": int(self.bit_depth_input.text()) if self.bit_depth_input.text() else None,
+            }
+
+        payload = {
+            "template_name": template_name,
+            "input_uri": input_uri,
+            "params": params,
+        }
         headers = {"Content-Type": "application/json"}
 
         try:

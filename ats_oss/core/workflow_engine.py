@@ -29,11 +29,27 @@ def load_workflow_template(template_name: str):
         return yaml.safe_load(f)
 
 
-def submit_workflow(template_name: str, input_uri: str):
+from typing import Dict, Any, Optional
+
+def submit_workflow(template_name: str, input_uri: str, params: Optional[Dict[str, Any]] = None):
     logging.info(f"Submitting workflow: {template_name} with input: {input_uri}")
     db = SessionLocal()
     try:
         template = load_workflow_template(template_name)
+
+        # --- Parameter Override Logic ---
+        # Deep copy the steps to avoid modifying the template cache
+        import copy
+        steps_data = copy.deepcopy(template["steps"])
+
+        if params:
+            # For now, assume params apply to the first step that accepts them.
+            # A more advanced system could target steps by name or index.
+            for step_def in steps_data:
+                if "params" in step_def:
+                    step_def["params"].update(params)
+                    break # Apply to the first step and stop
+
         workflow = models.Workflow(
             name=template["name"],
             template_name=template_name,
@@ -44,7 +60,7 @@ def submit_workflow(template_name: str, input_uri: str):
         db.flush()  # Flush to get the workflow.id
         logging.info(f"Created workflow record with ID: {workflow.id}")
 
-        for i, step_def in enumerate(template["steps"]):
+        for i, step_def in enumerate(steps_data):
             step = models.Step(
                 workflow_id=workflow.id,
                 index=i,

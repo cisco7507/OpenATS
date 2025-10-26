@@ -9,9 +9,12 @@ class WorkflowBase(BaseModel):
     template_name: Optional[str] = None
 
 
+from typing import Dict, Any
+
 class WorkflowCreate(BaseModel):
     template_name: str
     input_uri: str
+    params: Optional[Dict[str, Any]] = None
 
 
 class Workflow(WorkflowBase):

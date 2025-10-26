@@ -37,7 +37,9 @@ def submit_workflow(workflow_in: schema.WorkflowCreate, db: Session = Depends(ge
 
     try:
         workflow = workflow_engine.submit_workflow(
-            template_name=workflow_in.template_name, input_uri=workflow_in.input_uri
+            template_name=workflow_in.template_name,
+            input_uri=workflow_in.input_uri,
+            params=workflow_in.params,
         )
         return workflow
     except Exception as e:

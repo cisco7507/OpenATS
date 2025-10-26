@@ -1,0 +1,7 @@
+name: Transcode Audio
+steps:
+  - type: transcode
+    params:
+      format: wav
+      sample_rate: 48000
+      bit_depth: 24
