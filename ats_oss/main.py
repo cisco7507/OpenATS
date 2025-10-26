@@ -1,16 +1,21 @@
-import uvicorn
 import multiprocessing
 import sys
-from ats_oss.api.server import app
-from ats_oss.gui.app import run_gui
+import uvicorn
 
 def run_api():
     """Target function to run the Uvicorn server."""
+    from ats_oss.api.server import app
+    print("API process started.")
     uvicorn.run(app, host="127.0.0.1", port=8650)
+
+def run_gui():
+    """Target function to run the PyQt6 GUI."""
+    from ats_oss.gui.app import run_gui as run_gui_app
+    print("GUI process started.")
+    run_gui_app()
 
 if __name__ == "__main__":
     # Set start method for multiprocessing to ensure compatibility, especially on macOS
-    # A known issue on macOS requires 'fork' for PyQt6 in a multiprocess setup.
     if sys.platform == "darwin":
         multiprocessing.set_start_method("fork")
 
