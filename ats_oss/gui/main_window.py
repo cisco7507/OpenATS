@@ -62,8 +62,14 @@ class MainWindow(QMainWindow):
         if not selected_items:
             return
 
-        # Get the UUID from the first column of the selected row
-        wfuuid = selected_items[0].text()
+        # Get the row of the current selection, then get the item from the first column (ID)
+        selected_row = self.workflow_table.currentRow()
+        id_item = self.workflow_table.item(selected_row, 0)
+
+        if id_item is None:
+            return # Should not happen if a cell is selected, but good practice
+
+        wfuuid = id_item.text()
 
         try:
             response = requests.get(f"http://127.0.0.1:8650/workflows/getWorkflowStatus?wfuuid={wfuuid}")
