@@ -8,8 +8,8 @@ def run(context: dict, params: dict):
     Normalizes an audio file to a target loudness using ffmpeg.
     """
     input_uri = context["input_uri"]
-    current_lufs = context.get("loudness_lufs")
-    workflow_id = context.get("workflow_id") # This will be added to the context
+    current_lufs = context.get("integrated_lufs") # Use the correct key from the previous step
+    workflow_id = context.get("workflow_id")
 
     if current_lufs is None:
         raise ValueError("Loudness has not been measured yet. Cannot run normalize.")
