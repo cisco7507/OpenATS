@@ -1,8 +1,8 @@
 import requests
 from PyQt6.QtWidgets import (
-    QMainWindow, QLabel, QVBoxLayout, QWidget, QTabWidget, QTableWidget,
-    QTableWidgetItem, QLineEdit, QPushButton, QMessageBox, QFormLayout, QTextEdit,
-    QSplitter
+    QMainWindow, QLabel, QVBoxLayout, QWidget, QTabWidget, QTreeWidget,
+    QTreeWidgetItem, QLineEdit, QPushButton, QMessageBox, QFormLayout, QTextEdit,
+    QSplitter, QFileDialog, QHBoxLayout
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -41,35 +41,35 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(self.monitor_tab)
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        self.workflow_table = QTableWidget()
-        self.workflow_table.setColumnCount(6)
-        self.workflow_table.setHorizontalHeaderLabels(
-            ["ID", "Name", "State", "Created At", "Started At", "Finished At"]
-        )
-        splitter.addWidget(self.workflow_table)
+        self.workflow_tree = QTreeWidget()
+        self.workflow_tree.setColumnCount(4)
+        self.workflow_tree.setHeaderLabels(["ID / Name", "Created At", "Started At", "Finished At"])
+        splitter.addWidget(self.workflow_tree)
 
         self.workflow_details = QTextEdit()
         self.workflow_details.setReadOnly(True)
         splitter.addWidget(self.workflow_details)
 
-        layout.addWidget(splitter)
+        self.remove_button = QPushButton("Remove Selected Completed Job")
 
-        self.workflow_table.itemSelectionChanged.connect(self.display_workflow_details)
+        layout.addWidget(splitter)
+        layout.addWidget(self.remove_button)
+
+        self.workflow_tree.itemSelectionChanged.connect(self.display_workflow_details)
+        self.remove_button.clicked.connect(self.remove_selected_workflow)
 
     def display_workflow_details(self):
         """Fetches and displays the details for the selected workflow."""
-        selected_items = self.workflow_table.selectedItems()
+        selected_items = self.workflow_tree.selectedItems()
         if not selected_items:
             return
 
-        # Get the row of the current selection, then get the item from the first column (ID)
-        selected_row = self.workflow_table.currentRow()
-        id_item = self.workflow_table.item(selected_row, 0)
+        # The UUID is stored in the first column (index 0) of the selected item
+        wfuuid = selected_items[0].text(0)
 
-        if id_item is None:
-            return # Should not happen if a cell is selected, but good practice
-
-        wfuuid = id_item.text()
+        # Ignore clicks on the category headers
+        if not wfuuid:
+            return
 
         try:
             response = requests.get(f"http://127.0.0.1:8650/workflows/getWorkflowStatus?wfuuid={wfuuid}")
@@ -77,7 +77,6 @@ class MainWindow(QMainWindow):
                 import json
                 details = response.json()
 
-                # Check for an output URI and highlight it
                 output_uri = details.get("output_uri")
                 display_text = json.dumps(details, indent=2)
 
@@ -92,26 +91,37 @@ class MainWindow(QMainWindow):
             self.workflow_details.setText(f"Connection error: {e}")
 
     def refresh_workflow_list(self):
-        """Fetches the workflow list and updates the table."""
+        """Fetches the workflow list and updates the categorized tree."""
         try:
             response = requests.get("http://127.0.0.1:8650/workflows/getWorkflowList")
             if response.status_code == 200:
                 workflows = response.json()
-                self.workflow_table.setRowCount(len(workflows))
-                for i, wf in enumerate(workflows):
-                    self.workflow_table.setItem(i, 0, QTableWidgetItem(wf.get("id")))
-                    self.workflow_table.setItem(i, 1, QTableWidgetItem(wf.get("name")))
-                    # A map for human-readable states
-                    state_map = {0: "Queued", 1: "Running", 2: "Completed", 3: "Failed", 4: "Cancelled"}
+                self.workflow_tree.clear()
+
+                state_map = {
+                    0: "Queued", 1: "Running", 2: "Completed", 3: "Failed", 4: "Cancelled"
+                }
+
+                # Create top-level items for each category
+                categories = {name: QTreeWidgetItem(self.workflow_tree, [name]) for name in state_map.values()}
+
+                for wf in workflows:
                     state_str = state_map.get(wf.get("state"), "Unknown")
-                    self.workflow_table.setItem(i, 2, QTableWidgetItem(state_str))
-                    self.workflow_table.setItem(i, 3, QTableWidgetItem(wf.get("created_at")))
-                    self.workflow_table.setItem(i, 4, QTableWidgetItem(wf.get("started_at")))
-                    self.workflow_table.setItem(i, 5, QTableWidgetItem(wf.get("finished_at")))
+                    parent_item = categories.get(state_str)
+
+                    if parent_item:
+                        # Create a child item for the workflow
+                        child_item = QTreeWidgetItem(parent_item)
+                        child_item.setText(0, wf.get("id"))
+                        child_item.setText(1, wf.get("created_at"))
+                        child_item.setText(2, wf.get("started_at"))
+                        child_item.setText(3, wf.get("finished_at"))
+
+                # Expand all categories to be visible
+                self.workflow_tree.expandAll()
             else:
                 print(f"Failed to fetch workflow list: {response.status_code}")
         except requests.exceptions.ConnectionError:
-            # This is handled by the main status checker, but good to be safe
             pass
 
     def setup_submit_tab(self):
@@ -119,14 +129,71 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(self.submit_tab)
 
         self.template_name_input = QLineEdit("normalize_and_qc")
-        self.input_uri_input = QLineEdit("path/to/your/audio.wav")
-        self.submit_button = QPushButton("Submit Workflow")
-
         layout.addRow("Workflow Template:", self.template_name_input)
-        layout.addRow("Input File URI:", self.input_uri_input)
+
+        # Create a horizontal layout for the file input and browse button
+        file_input_layout = QHBoxLayout()
+        self.input_uri_input = QLineEdit("path/to/your/audio.wav")
+        self.browse_button = QPushButton("Browse...")
+        file_input_layout.addWidget(self.input_uri_input)
+        file_input_layout.addWidget(self.browse_button)
+        layout.addRow("Input File URI:", file_input_layout)
+
+        self.submit_button = QPushButton("Submit Workflow")
         layout.addRow(self.submit_button)
 
+        self.browse_button.clicked.connect(self.browse_file)
         self.submit_button.clicked.connect(self.submit_workflow)
+
+    def remove_selected_workflow(self):
+        """Removes the selected, completed workflow from the system."""
+        selected_items = self.workflow_tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Selection Error", "Please select a workflow to remove.")
+            return
+
+        item = selected_items[0]
+        # Ensure the item is a workflow and not a category header
+        wfuuid = item.text(0)
+        if not wfuuid:
+            QMessageBox.warning(self, "Selection Error", "Please select a workflow, not a category header.")
+            return
+
+        # Check if the workflow is in a removable state (Completed, Failed, Cancelled)
+        parent = item.parent()
+        if parent is None or parent.text(0) not in ["Completed", "Failed", "Cancelled"]:
+            QMessageBox.warning(self, "State Error", "Only workflows from 'Completed', 'Failed', or 'Cancelled' categories can be removed.")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to permanently remove workflow {wfuuid}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if confirm == QMessageBox.StandardButton.Yes:
+            try:
+                response = requests.delete(f"http://127.0.0.1:8650/workflows/removeCompletedWorkflow?wfuuid={wfuuid}")
+                if response.status_code == 204:
+                    QMessageBox.information(self, "Success", "Workflow removed successfully.")
+                    self.refresh_workflow_list()
+                    self.workflow_details.clear()
+                else:
+                    QMessageBox.critical(self, "Error", f"Failed to remove workflow: {response.text}")
+            except requests.exceptions.RequestException as e:
+                QMessageBox.critical(self, "Connection Error", f"Failed to connect to the server: {e}")
+
+    def browse_file(self):
+        """Opens a file dialog to select an audio file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select an Audio File",
+            "", # Start directory
+            "Audio Files (*.wav *.mp3 *.flac *.aac);;All Files (*)"
+        )
+        if file_path:
+            self.input_uri_input.setText(file_path)
 
     def submit_workflow(self):
         """Handles the submission of a new workflow."""

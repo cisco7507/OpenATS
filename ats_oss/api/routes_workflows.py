@@ -6,6 +6,8 @@ from . import schema
 from typing import List
 import traceback
 import uuid
+import shutil
+from ats_oss.config import settings
 
 router = APIRouter()
 
@@ -42,3 +44,25 @@ def submit_workflow(workflow_in: schema.WorkflowCreate, db: Session = Depends(ge
         print(f"Error in submit_workflow: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/removeCompletedWorkflow", status_code=204)
+def remove_completed_workflow(wfuuid: uuid.UUID, db: Session = Depends(get_db)):
+    db_workflow = get_workflow(db, wfuuid)
+    if db_workflow is None:
+        # Idempotent: if it's already gone, that's success.
+        return
+
+    if db_workflow.state not in [2, 3, 4]: # Completed, Failed, Cancelled
+        raise HTTPException(
+            status_code=400,
+            detail="Workflow is not in a completed, failed, or cancelled state.",
+        )
+
+    # --- File System Cleanup ---
+    output_dir = settings.data_root / str(wfuuid)
+    if output_dir.exists():
+        print(f"Removing workflow data directory: {output_dir}")
+        shutil.rmtree(output_dir)
+
+    db.delete(db_workflow)
+    db.commit()
