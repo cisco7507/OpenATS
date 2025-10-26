@@ -2,7 +2,7 @@ import requests
 from PyQt6.QtWidgets import (
     QMainWindow, QLabel, QVBoxLayout, QWidget, QTabWidget, QTreeWidget,
     QTreeWidgetItem, QLineEdit, QPushButton, QMessageBox, QFormLayout, QTextEdit,
-    QSplitter, QFileDialog, QHBoxLayout
+    QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -44,13 +44,14 @@ class MainWindow(QMainWindow):
         self.workflow_tree = QTreeWidget()
         self.workflow_tree.setColumnCount(4)
         self.workflow_tree.setHeaderLabels(["ID / Name", "Created At", "Started At", "Finished At"])
+        self.workflow_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         splitter.addWidget(self.workflow_tree)
 
         self.workflow_details = QTextEdit()
         self.workflow_details.setReadOnly(True)
         splitter.addWidget(self.workflow_details)
 
-        self.remove_button = QPushButton("Remove Selected Completed Job")
+        self.remove_button = QPushButton("Remove Selected Completed Job(s)")
 
         layout.addWidget(splitter)
         layout.addWidget(self.remove_button)
@@ -146,43 +147,50 @@ class MainWindow(QMainWindow):
         self.submit_button.clicked.connect(self.submit_workflow)
 
     def remove_selected_workflow(self):
-        """Removes the selected, completed workflow from the system."""
+        """Removes all selected, completed workflows from the system."""
         selected_items = self.workflow_tree.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "Selection Error", "Please select a workflow to remove.")
+            QMessageBox.warning(self, "Selection Error", "Please select one or more workflows to remove.")
             return
 
-        item = selected_items[0]
-        # Ensure the item is a workflow and not a category header
-        wfuuid = item.text(0)
-        if not wfuuid:
-            QMessageBox.warning(self, "Selection Error", "Please select a workflow, not a category header.")
+        workflows_to_remove = []
+        for item in selected_items:
+            wfuuid = item.text(0)
+            # Ignore category headers
+            if not wfuuid:
+                continue
+
+            # Check if the workflow is in a removable state
+            parent = item.parent()
+            if parent and parent.text(0) in ["Completed", "Failed", "Cancelled"]:
+                workflows_to_remove.append(wfuuid)
+
+        if not workflows_to_remove:
+            QMessageBox.warning(self, "State Error", "None of the selected workflows are in a removable state (Completed, Failed, or Cancelled).")
             return
 
-        # Check if the workflow is in a removable state (Completed, Failed, Cancelled)
-        parent = item.parent()
-        if parent is None or parent.text(0) not in ["Completed", "Failed", "Cancelled"]:
-            QMessageBox.warning(self, "State Error", "Only workflows from 'Completed', 'Failed', or 'Cancelled' categories can be removed.")
-            return
-
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to permanently remove workflow {wfuuid}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if confirm == QMessageBox.StandardButton.Yes:
+        removed_count = 0
+        errors = []
+        for wfuuid in workflows_to_remove:
             try:
                 response = requests.delete(f"http://127.0.0.1:8650/workflows/removeCompletedWorkflow?wfuuid={wfuuid}")
                 if response.status_code == 204:
-                    QMessageBox.information(self, "Success", "Workflow removed successfully.")
-                    self.refresh_workflow_list()
-                    self.workflow_details.clear()
+                    removed_count += 1
                 else:
-                    QMessageBox.critical(self, "Error", f"Failed to remove workflow: {response.text}")
+                    errors.append(f"{wfuuid}: {response.text}")
             except requests.exceptions.RequestException as e:
-                QMessageBox.critical(self, "Connection Error", f"Failed to connect to the server: {e}")
+                errors.append(f"{wfuuid}: Connection Error - {e}")
+
+        # Display a summary message
+        if removed_count > 0:
+            QMessageBox.information(self, "Success", f"{removed_count} workflow(s) removed successfully.")
+
+        if errors:
+            error_details = "\n".join(errors)
+            QMessageBox.critical(self, "Error", f"Some workflows could not be removed:\n{error_details}")
+
+        self.refresh_workflow_list()
+        self.workflow_details.clear()
 
     def browse_file(self):
         """Opens a file dialog to select an audio file."""
