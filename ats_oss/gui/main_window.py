@@ -146,13 +146,15 @@ class MainWindow(QMainWindow):
         transcode_layout = QFormLayout(self.transcode_params_widget)
 
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["wav", "flac", "aac", "opus"])
+        self.format_combo.addItems(["wav", "flac", "mp3", "aac", "opus"])
         self.sample_rate_input = QLineEdit("48000")
         self.bit_depth_input = QLineEdit("24")
+        self.bitrate_input = QLineEdit("320k")
 
         transcode_layout.addRow("Format:", self.format_combo)
         transcode_layout.addRow("Sample Rate:", self.sample_rate_input)
-        transcode_layout.addRow("Bit Depth (if applicable):", self.bit_depth_input)
+        self.bit_depth_row = transcode_layout.addRow("Bit Depth:", self.bit_depth_input)
+        self.bitrate_row = transcode_layout.addRow("Bitrate:", self.bitrate_input)
 
         layout.addRow(self.transcode_params_widget)
         self.transcode_params_widget.setVisible(False) # Hidden by default
@@ -163,13 +165,33 @@ class MainWindow(QMainWindow):
         self.browse_button.clicked.connect(self.browse_file)
         self.submit_button.clicked.connect(self.submit_workflow)
         self.template_combo.currentTextChanged.connect(self.on_workflow_selected)
+        self.format_combo.currentTextChanged.connect(self.on_format_selected)
+
+        # Initial check to set the correct visibility
+        self.on_workflow_selected(self.template_combo.currentText())
 
     def on_workflow_selected(self, workflow_name):
-        """Shows or hides dynamic fields based on the selected workflow."""
-        if "transcode" in workflow_name.lower():
-            self.transcode_params_widget.setVisible(True)
-        else:
-            self.transcode_params_widget.setVisible(False)
+        """Shows or hides the entire transcode parameter box."""
+        is_transcode = "transcode" in workflow_name.lower()
+        self.transcode_params_widget.setVisible(is_transcode)
+        if is_transcode:
+            # When the transcode box becomes visible, also update the format-specific fields
+            self.on_format_selected(self.format_combo.currentText())
+
+    def on_format_selected(self, format_name):
+        """Shows or hides format-specific fields like bitrate or bit depth."""
+        lossy_formats = ["mp3", "aac", "opus"]
+        is_lossy = format_name.lower() in lossy_formats
+
+        # QFormLayout manages the visibility of the entire row.
+        # We need to get the parent QLayout object to show/hide rows.
+        # It's cleaner to toggle the widgets themselves.
+        self.bitrate_input.setVisible(is_lossy)
+        self.bit_depth_input.setVisible(not is_lossy)
+
+        # We also need to hide the labels
+        self.transcode_params_widget.layout().labelForField(self.bitrate_input).setVisible(is_lossy)
+        self.transcode_params_widget.layout().labelForField(self.bit_depth_input).setVisible(not is_lossy)
 
     def populate_workflows(self):
         """Scans the workflows directory and populates the dropdown."""
@@ -253,11 +275,15 @@ class MainWindow(QMainWindow):
 
         params = {}
         if "transcode" in template_name.lower():
+            format_name = self.format_combo.currentText()
             params = {
-                "format": self.format_combo.currentText(),
+                "format": format_name,
                 "sample_rate": int(self.sample_rate_input.text()),
-                "bit_depth": int(self.bit_depth_input.text()) if self.bit_depth_input.text() else None,
             }
+            if format_name.lower() in ["mp3", "aac", "opus"]:
+                params["bitrate"] = self.bitrate_input.text()
+            else:
+                params["bit_depth"] = int(self.bit_depth_input.text()) if self.bit_depth_input.text() else None
 
         payload = {
             "template_name": template_name,

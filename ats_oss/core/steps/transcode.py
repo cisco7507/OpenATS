@@ -17,7 +17,8 @@ def run(context: dict, params: dict):
     # --- Get Transcode Parameters ---
     output_format = params.get("format", "wav")
     sample_rate = params.get("sample_rate", 48000)
-    bit_depth = params.get("bit_depth") # Can be None for formats like AAC
+    bit_depth = params.get("bit_depth")
+    bitrate = params.get("bitrate") # For lossy formats like MP3
 
     # --- Create Output Path ---
     output_dir = settings.data_root / str(workflow_id)
@@ -37,15 +38,18 @@ def run(context: dict, params: dict):
 
         # Add codec based on format
         if output_format.lower() == 'wav':
-            # Default to pcm_s24le for 24-bit, pcm_s16le for 16-bit
             if bit_depth == 24:
                 output_args['acodec'] = 'pcm_s24le'
             else:
                 output_args['acodec'] = 'pcm_s16le'
         elif output_format.lower() == 'flac':
             output_args['acodec'] = 'flac'
-            if bit_depth: # FLAC supports bit depth specification
+            if bit_depth:
                  output_args['sample_fmt'] = f's{bit_depth}'
+        elif output_format.lower() == 'mp3':
+            output_args['acodec'] = 'libmp3lame'
+            if bitrate:
+                output_args['audio_bitrate'] = bitrate
 
         stream = ffmpeg.output(stream, str(output_path), **output_args)
 

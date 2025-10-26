@@ -29,8 +29,11 @@ def run(context: dict, params: dict):
     print(f"Loudness Analysis Complete: "
           f"Integrated={integrated_lufs:.2f} LUFS, Peak={peak_dbfs:.2f} dBFS")
 
+    lra = meter.loudness_range(data)
+
     # Return only the metrics we can reliably calculate
     return {
         "integrated_lufs": integrated_lufs,
         "peak_dbfs": peak_dbfs,
+        "lra": lra,
     }
