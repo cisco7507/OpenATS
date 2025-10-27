@@ -21,6 +21,27 @@ STEP_REGISTRY = {
 }
 
 from ats_oss.config import settings
+import re
+
+def _substitute_params(data: Any, params: Dict[str, Any]) -> Any:
+    """
+    Recursively substitutes placeholders in a data structure.
+    e.g., "${parameters.sample_rate}" -> "48000"
+    """
+    if isinstance(data, dict):
+        return {k: _substitute_params(v, params) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_substitute_params(item, params) for item in data]
+    elif isinstance(data, str):
+        pattern = re.compile(r'\$\{parameters\.(\w+)\}')
+
+        def replacer(match):
+            key = match.group(1)
+            # Replace with the value from params if it exists, otherwise keep the original placeholder
+            return str(params.get(key, match.group(0)))
+
+        return pattern.sub(replacer, data)
+    return data
 
 def load_workflow_template(template_name: str):
     template_path = settings.workflows_dir / f"{template_name}.yaml"
@@ -34,15 +55,20 @@ def submit_workflow(template_name: str, input_uri: str, params: Optional[Dict[st
     try:
         template = load_workflow_template(template_name)
 
-        # --- Parameter Override Logic ---
+        # --- Parameter Substitution Logic ---
+        # 1. Get default parameters from the template
+        default_params = template.get("parameters", {})
+
+        # 2. Merge with parameters from the API call (API params take precedence)
+        merged_params = default_params.copy()
+        if params:
+            merged_params.update(params)
+
+        # 3. Recursively substitute placeholders in the steps data
         import copy
         steps_data = copy.deepcopy(template["steps"])
-
-        if params:
-            for step_def in steps_data:
-                if "params" in step_def:
-                    step_def["params"].update(params)
-                    break
+        steps_data = _substitute_params(steps_data, merged_params)
+        log.debug(f"Substituted steps data: {steps_data}")
 
         workflow = models.Workflow(
             name=template["name"],
