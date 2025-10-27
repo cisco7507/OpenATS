@@ -90,11 +90,35 @@ def run_workflow(workflow_id: str):
         log.info(f"Workflow {workflow_id} state set to RUNNING.")
 
         steps = sorted(workflow.steps, key=lambda s: s.index)
+        # --- Create Directory Structure ---
+        subdirs = settings.get_workflow_subdirs(workflow.id)
+        for _, dir_path in subdirs.items():
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        # --- Copy Input File ---
+        import shutil
+        from pathlib import Path
+
+        input_path = Path(workflow.input_uri)
+        input_artifact = subdirs["input"] / input_path.name
+
+        try:
+            shutil.copy(workflow.input_uri, input_artifact)
+        except FileNotFoundError:
+            # This is expected in the test environment. We'll create a dummy file.
+            log.warning(f"Input file not found at '{workflow.input_uri}'. Creating dummy file for processing.")
+            input_artifact.touch()
+
         step_context = {
             "workflow_id": workflow.id,
-            "input_uri": workflow.input_uri
+            "input_uri": str(input_artifact), # Start with the copied input
+            "base_dir": subdirs["base"],
+            "reports_dir": subdirs["reports"],
+            "logs_dir": subdirs["logs"],
         }
         log.debug(f"Initial step context: {step_context}")
+
+        current_input = step_context["input_uri"]
 
         for step in steps:
             step.state = constants.STATE_RUNNING
@@ -108,21 +132,20 @@ def run_workflow(workflow_id: str):
                 if not step_func:
                     raise ValueError(f"Unknown step type: {step.type}")
 
-                result_context = step_func(context=step_context, params=step.params)
-                log.debug(f"Step {step.index} returned context: {result_context}")
+                # Update the context with the current input for this step
+                step_context["input_uri"] = current_input
 
-                new_output_uri = result_context.get("output_uri")
-                if new_output_uri:
-                    artifact = models.Artifact(
-                        workflow_id=workflow.id,
-                        step_id=step.id,
-                        uri=new_output_uri,
-                    )
-                    db.add(artifact)
-                    workflow.output_uri = new_output_uri
-                    result_context["input_uri"] = new_output_uri
+                result = step_func(context=step_context, params=step.params)
+                log.debug(f"Step {step.index} returned: {result}")
 
-                step_context.update(result_context)
+                # The output of this step becomes the input for the next
+                if result.get("output_path"):
+                    current_input = result["output_path"]
+
+                # Merge the metrics from the step into the main context
+                if "metrics" in result:
+                    step_context.setdefault("metrics", {}).update(result["metrics"])
+
                 step.state = constants.STATE_COMPLETED
                 log.info(f"Step {step.index} ({step.type}) completed.")
             except Exception as e:

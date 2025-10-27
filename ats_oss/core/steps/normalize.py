@@ -2,58 +2,59 @@ import ffmpeg
 from pathlib import Path
 from ats_oss.config import settings
 from ats_oss.logging import log
+from ats_oss.core import reporting
 
 def run(context: dict, params: dict):
     """
-    Normalizes an audio file to a target loudness using ffmpeg.
+    Normalizes an audio file to a target loudness and true peak, saving a JSON report.
     """
     input_uri = context["input_uri"]
-    current_lufs = context.get("integrated_lufs") # Use the correct key from the previous step
-    workflow_id = context.get("workflow_id")
+    workflow_id = context["workflow_id"]
+    reports_dir = context["reports_dir"]
 
-    if current_lufs is None:
+    # Get the base directory for the normalized output
+    normalized_dir = settings.get_workflow_subdirs(workflow_id)["normalized"]
+
+    # Get metrics from the context (produced by analyze_loudness)
+    metrics = context.get("metrics", {})
+    integrated_lufs = metrics.get("integrated_lufs")
+
+    if integrated_lufs is None:
         raise ValueError("Loudness has not been measured yet. Cannot run normalize.")
-    if workflow_id is None:
-        raise ValueError("Workflow ID is missing. Cannot determine output path.")
 
     target_lufs = params.get("target_lufs", -23.0)
-
-    # --- Create Output Directory ---
-    output_dir = settings.data_root / str(workflow_id)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use pathlib to construct the output path
-    input_path = Path(input_uri)
-    output_path = output_dir / f"{input_path.stem}_normalized.wav"
-
-    # --- Calculate Gain ---
-    gain_db = target_lufs - current_lufs
-    log.info(f"Applying {gain_db:.2f} dB gain to reach {target_lufs} LUFS.")
-
     target_true_peak = params.get("max_truepeak_db", -2.0)
 
-    # --- FFmpeg Command ---
+    output_path = normalized_dir / f"{Path(input_uri).stem}_normalized.wav"
+
+    gain_db = target_lufs - integrated_lufs
+    log.info(f"Applying {gain_db:.2f} dB gain to reach {target_lufs} LUFS with a {target_true_peak} dBTP limit.")
+
     try:
         stream = ffmpeg.input(input_uri)
         stream = stream.filter('volume', f'{gain_db}dB')
-        # Add a true-peak limiter
-        stream = stream.filter('alimiter', level_in='1', level_out='1', limit=f'{target_true_peak}dBTP', attack='5', release='50')
-        stream = stream.output(str(output_path), acodec='pcm_s24le', ar='48000') # Standard WAV output
+        stream = stream.filter('alimiter', limit=f'{target_true_peak}dBTP')
+        stream = stream.output(str(output_path), acodec='pcm_s24le', ar='48000')
 
-        # Get the command line arguments for debugging
         args = stream.get_args()
         log.debug(f"FFmpeg command for normalize: ffmpeg {' '.join(args)}")
 
         stream.overwrite_output().run(capture_stdout=True, capture_stderr=True)
         log.info(f"Normalized file saved to: {output_path}")
+
     except ffmpeg.Error as e:
-        # This will catch errors from the ffmpeg command itself
         stderr = e.stderr.decode('utf8')
         raise RuntimeError(f"FFmpeg failed to normalize the file: {stderr}")
 
-    # Return the path to the new file so it can be used by subsequent steps
-    # and recorded as an artifact.
+    result_metrics = {
+        "applied_gain_db": gain_db,
+        "target_lufs": target_lufs,
+        "max_truepeak_db": target_true_peak,
+    }
+
+    reporting.save_json_report(result_metrics, reports_dir, "normalize.json")
+
     return {
-        "output_uri": str(output_path),
-        "normalization_gain_db": gain_db
+        "output_path": str(output_path),
+        "metrics": result_metrics
     }

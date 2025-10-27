@@ -1,0 +1,55 @@
+name: Transcode_Multi_Output
+description: >
+  Normalize incoming audio to broadcast loudness standards (-23 LUFS, -2 dBTP),
+  then create multiple deliverables (broadcast WAV, streaming MP3, and archival FLAC).
+  Perform basic QC after export. Loudness Range (LRA) is not computed.
+
+parameters:
+  target_lufs: -23.0
+  max_truepeak_db: -2.0
+  sample_rate: 48000
+  bit_depth: 24
+  mp3_bitrate_kbps: 192
+  flac_compression: 5
+
+steps:
+  - type: analyze_loudness
+    description: >
+      Measure integrated loudness (LUFS) and true peak (dBTP) of the original input.
+      Do not compute LRA.
+
+  - type: normalize
+    params:
+      target_lufs: ${parameters.target_lufs}
+      max_truepeak_db: ${parameters.max_truepeak_db}
+    description: >
+      Apply gain to reach target LUFS and limit to the specified true-peak ceiling.
+      Output a single normalized WAV into /normalized/.
+
+  - type: transcode
+    params:
+      format: wav
+      sample_rate: ${parameters.sample_rate}
+      bit_depth: ${parameters.bit_depth}
+      output_subdir: wav_output
+    description: Export normalized audio as 48 kHz, 24-bit WAV.
+
+  - type: transcode
+    params:
+      format: mp3
+      bitrate_kbps: ${parameters.mp3_bitrate_kbps}
+      channels: 2
+      output_subdir: mp3_output
+    description: Export normalized audio as 192 kbps stereo MP3.
+
+  - type: transcode
+    params:
+      format: flac
+      compression_level: ${parameters.flac_compression}
+      output_subdir: flac_archive
+    description: Export normalized audio as lossless FLAC.
+
+  - type: qc_basic
+    description: >
+      Run checks for silence, clipping, DC offset, and format integrity over
+      the deliverables (WAV/MP3/FLAC). Write results to /reports/qc_basic.json.

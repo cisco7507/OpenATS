@@ -2,67 +2,69 @@ import ffmpeg
 from pathlib import Path
 from ats_oss.config import settings
 from ats_oss.logging import log
+from ats_oss.core import reporting
 
 def run(context: dict, params: dict):
     """
-    Transcodes an audio file to a new format using ffmpeg.
+    Transcodes an audio file to a new format, saving a JSON report.
     """
     input_uri = context["input_uri"]
-    workflow_id = context.get("workflow_id")
+    workflow_id = context["workflow_id"]
+    base_dir = context["base_dir"]
+    reports_dir = context["reports_dir"]
 
     if not input_uri:
-        raise ValueError("Input file URI is missing.")
-    if not workflow_id:
-        raise ValueError("Workflow ID is missing. Cannot determine output path.")
+        raise ValueError("Input file URI is missing for transcode step.")
 
     # --- Get Transcode Parameters ---
     output_format = params.get("format", "wav")
-    sample_rate = params.get("sample_rate", 48000)
-    bit_depth = params.get("bit_depth")
-    bitrate = params.get("bitrate") # For lossy formats like MP3
+    output_subdir = params.get("output_subdir")
+
+    if not output_subdir:
+        raise ValueError("'output_subdir' is a required parameter for transcode.")
 
     # --- Create Output Path ---
-    output_dir = settings.data_root / str(workflow_id)
+    output_dir = base_dir / output_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_path = Path(input_uri)
-    output_path = output_dir / f"{input_path.stem}_transcoded.{output_format}"
+    output_path = output_dir / f"{input_path.stem}.{output_format}"
 
     # --- Build FFmpeg Command ---
     try:
         stream = ffmpeg.input(input_uri)
 
-        # Build a dictionary of output arguments
         output_args = {
-            'ar': str(sample_rate)
+            'ar': params.get("sample_rate", "48000")
         }
 
-        # Add codec based on format
-        if output_format.lower() == 'wav':
-            if bit_depth == 24:
-                output_args['acodec'] = 'pcm_s24le'
-            else:
-                output_args['acodec'] = 'pcm_s16le'
-        elif output_format.lower() == 'flac':
+        if output_format == 'wav':
+            output_args['acodec'] = 'pcm_s24le' if params.get("bit_depth") == 24 else 'pcm_s16le'
+        elif output_format == 'flac':
             output_args['acodec'] = 'flac'
-            if bit_depth:
-                 output_args['sample_fmt'] = f's{bit_depth}'
-        elif output_format.lower() == 'mp3':
+            if "compression_level" in params:
+                output_args['compression_level'] = params["compression_level"]
+        elif output_format == 'mp3':
             output_args['acodec'] = 'libmp3lame'
-            if bitrate:
-                output_args['audio_bitrate'] = bitrate
+            if "bitrate_kbps" in params:
+                output_args['audio_bitrate'] = f'{params["bitrate_kbps"]}k'
 
         stream = ffmpeg.output(stream, str(output_path), **output_args)
 
-        # Get the command line arguments for debugging
         args = stream.get_args()
-        log.debug(f"FFmpeg command for transcode: ffmpeg {' '.join(args)}")
+        log.debug(f"FFmpeg command for transcode ({output_format}): ffmpeg {' '.join(args)}")
 
         stream.overwrite_output().run(capture_stdout=True, capture_stderr=True)
         log.info(f"Transcoded file saved to: {output_path}")
 
     except ffmpeg.Error as e:
         stderr = e.stderr.decode('utf8')
-        raise RuntimeError(f"FFmpeg failed to transcode the file: {stderr}")
+        raise RuntimeError(f"FFmpeg failed to transcode to {output_format}: {stderr}")
 
-    return {"output_uri": str(output_path)}
+    result_metrics = {"output_path": str(output_path)}
+    reporting.save_json_report(result_metrics, reports_dir, f"transcode_{output_format}.json")
+
+    return {
+        "output_path": str(output_path),
+        "metrics": result_metrics
+    }
