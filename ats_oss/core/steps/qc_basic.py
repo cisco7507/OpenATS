@@ -1,5 +1,6 @@
 import soundfile as sf
 import numpy as np
+from ats_oss.logging import log
 
 def run(context: dict, params: dict):
     """
@@ -23,9 +24,9 @@ def run(context: dict, params: dict):
     clipping_detected = clipped_samples > 0
 
     if clipping_detected:
-        print(f"QC Warning: Clipping detected! Found {clipped_samples} samples at or above 0 dBFS.")
+        log.warning(f"QC Warning: Clipping detected! Found {clipped_samples} samples at or above 0 dBFS.")
     else:
-        print("QC Check: No clipping detected.")
+        log.info("QC Check: No clipping detected.")
 
     return {
         "clipping_detected": bool(clipping_detected), # Ensure JSON-compatible boolean

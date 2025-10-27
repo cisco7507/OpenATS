@@ -1,7 +1,7 @@
 import ffmpeg
-import os
 from pathlib import Path
 from ats_oss.config import settings
+from ats_oss.logging import log
 
 def run(context: dict, params: dict):
     """
@@ -28,19 +28,24 @@ def run(context: dict, params: dict):
 
     # --- Calculate Gain ---
     gain_db = target_lufs - current_lufs
-    print(f"Applying {gain_db:.2f} dB gain to reach {target_lufs} LUFS.")
+    log.info(f"Applying {gain_db:.2f} dB gain to reach {target_lufs} LUFS.")
+
+    target_true_peak = params.get("max_truepeak_db", -2.0)
 
     # --- FFmpeg Command ---
     try:
-        (
-            ffmpeg
-            .input(input_uri)
-            .filter('volume', f'{gain_db}dB')
-            .output(str(output_path), acodec='pcm_s24le', ar='48000') # Standard WAV output
-            .overwrite_output()
-            .run(capture_stdout=True, capture_stderr=True)
-        )
-        print(f"Normalized file saved to: {output_path}")
+        stream = ffmpeg.input(input_uri)
+        stream = stream.filter('volume', f'{gain_db}dB')
+        # Add a true-peak limiter
+        stream = stream.filter('alimiter', level_in='1', level_out='1', limit=f'{target_true_peak}dBTP', attack='5', release='50')
+        stream = stream.output(str(output_path), acodec='pcm_s24le', ar='48000') # Standard WAV output
+
+        # Get the command line arguments for debugging
+        args = stream.get_args()
+        log.debug(f"FFmpeg command for normalize: ffmpeg {' '.join(args)}")
+
+        stream.overwrite_output().run(capture_stdout=True, capture_stderr=True)
+        log.info(f"Normalized file saved to: {output_path}")
     except ffmpeg.Error as e:
         # This will catch errors from the ffmpeg command itself
         stderr = e.stderr.decode('utf8')

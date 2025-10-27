@@ -27,3 +27,6 @@ loudness:
   target_lufs: -23.0
   max_truepeak_db: -2.0
   lra_limit: 11.0
+
+logging:
+  level: "INFO" # Can be DEBUG, INFO, WARNING, ERROR

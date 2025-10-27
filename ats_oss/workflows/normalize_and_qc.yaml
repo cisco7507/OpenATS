@@ -5,3 +5,4 @@ steps:
     params:
       target_lufs: -23.0
       max_truepeak_db: -2.0
+  - type: qc_basic

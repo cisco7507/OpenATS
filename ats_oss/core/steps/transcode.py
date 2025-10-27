@@ -1,6 +1,7 @@
 import ffmpeg
 from pathlib import Path
 from ats_oss.config import settings
+from ats_oss.logging import log
 
 def run(context: dict, params: dict):
     """
@@ -53,12 +54,13 @@ def run(context: dict, params: dict):
 
         stream = ffmpeg.output(stream, str(output_path), **output_args)
 
-        stream.overwrite_output().run(capture_stdout=True, capture_stderr=True)
-        print(f"Transcoded file saved to: {output_path}")
+        # Get the command line arguments for debugging
+        args = stream.get_args()
+        log.debug(f"FFmpeg command for transcode: ffmpeg {' '.join(args)}")
 
-    except FileNotFoundError:
-        print(f"WARNING: Input file '{input_uri}' not found. Creating dummy output file.")
-        output_path.touch()
+        stream.overwrite_output().run(capture_stdout=True, capture_stderr=True)
+        log.info(f"Transcoded file saved to: {output_path}")
+
     except ffmpeg.Error as e:
         stderr = e.stderr.decode('utf8')
         raise RuntimeError(f"FFmpeg failed to transcode the file: {stderr}")

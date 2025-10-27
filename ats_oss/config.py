@@ -33,5 +33,9 @@ class Config:
         # Resolve the data_root relative to the project root
         return self.project_root / self.config["paths"]["data_root"]
 
+    @property
+    def logging_level(self):
+        return self.config["logging"]["level"].upper()
+
 # Create a singleton instance
 settings = Config()

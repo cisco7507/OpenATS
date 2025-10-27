@@ -1,12 +1,13 @@
 import pyloudnorm as pyln
 import soundfile as sf
 import numpy as np
+from ats_oss.logging import log
 
 def run(context: dict, params: dict):
     """
     Analyzes the loudness and peak of an audio file.
     """
-    print("\n\n--- EXECUTING LOUDNESS STEP (VERSION 5.0 - LRA REMOVED) ---\n\n")
+    log.info("--- EXECUTING LOUDNESS STEP (VERSION 5.0 - LRA REMOVED) ---")
     input_uri = context["input_uri"]
 
     try:
@@ -26,7 +27,7 @@ def run(context: dict, params: dict):
     # We will use a numpy-based peak measurement as a close approximation.
     peak_dbfs = 20 * np.log10(np.max(np.abs(data)))
 
-    print(f"Loudness Analysis Complete: "
+    log.info(f"Loudness Analysis Complete: "
           f"Integrated={integrated_lufs:.2f} LUFS, Peak={peak_dbfs:.2f} dBFS")
 
     # Return only the metrics we can reliably calculate
