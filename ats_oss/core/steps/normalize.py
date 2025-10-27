@@ -22,8 +22,8 @@ def run(context: dict, params: dict):
     if integrated_lufs is None:
         raise ValueError("Loudness has not been measured yet. Cannot run normalize.")
 
-    target_lufs = params.get("target_lufs", -23.0)
-    target_true_peak = params.get("max_truepeak_db", -2.0)
+    target_lufs = float(params.get("target_lufs", -23.0))
+    target_true_peak = float(params.get("max_truepeak_db", -2.0))
 
     output_path = normalized_dir / f"{Path(input_uri).stem}_normalized.wav"
 
