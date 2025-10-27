@@ -61,10 +61,10 @@ def remove_completed_workflow(wfuuid: uuid.UUID, db: Session = Depends(get_db)):
         )
 
     # --- File System Cleanup ---
-    output_dir = settings.data_root / str(wfuuid)
-    if output_dir.exists():
-        print(f"Removing workflow data directory: {output_dir}")
-        shutil.rmtree(output_dir)
+    workflow_dir = settings.data_root / "workflows" / str(wfuuid)
+    if workflow_dir.exists():
+        print(f"Removing workflow data directory: {workflow_dir}")
+        shutil.rmtree(workflow_dir)
 
     db.delete(db_workflow)
     db.commit()

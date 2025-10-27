@@ -5,3 +5,4 @@ steps:
       format: wav
       sample_rate: 48000
       bit_depth: 24
+      output_subdir: "wav_output"
