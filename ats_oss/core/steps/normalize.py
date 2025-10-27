@@ -28,12 +28,12 @@ def run(context: dict, params: dict):
     output_path = normalized_dir / f"{Path(input_uri).stem}_normalized.wav"
 
     gain_db = target_lufs - integrated_lufs
-    log.info(f"Applying {gain_db:.2f} dB gain to reach {target_lufs} LUFS with a {target_true_peak} dBTP limit.")
+    log.info(f"Applying {gain_db:.2f} dB gain to reach {target_lufs} LUFS with a {target_true_peak} dB limit.")
 
     try:
         stream = ffmpeg.input(input_uri)
         stream = stream.filter('volume', f'{gain_db}dB')
-        stream = stream.filter('alimiter', limit=f'{target_true_peak}dBTP')
+        stream = stream.filter('alimiter', limit=f'{target_true_peak}dB')
         stream = stream.output(str(output_path), acodec='pcm_s24le', ar='48000')
 
         args = stream.get_args()
