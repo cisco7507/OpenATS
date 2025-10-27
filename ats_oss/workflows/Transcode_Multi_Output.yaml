@@ -4,6 +4,9 @@ description: >
   then create multiple deliverables (broadcast WAV, streaming MP3, and archival FLAC).
   Perform basic QC after export. Loudness Range (LRA) is not computed.
 
+gui_options:
+  hide_transcode_params: true
+
 parameters:
   target_lufs: -23.0
   max_truepeak_db: -2.0

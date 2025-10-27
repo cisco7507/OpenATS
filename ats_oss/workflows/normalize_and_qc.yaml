@@ -1,4 +1,6 @@
 name: Normalize_and_QC
+gui_options:
+  hide_transcode_params: true
 steps:
   - type: analyze_loudness
   - type: normalize

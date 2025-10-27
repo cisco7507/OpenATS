@@ -171,10 +171,33 @@ class MainWindow(QMainWindow):
         self.on_workflow_selected(self.template_combo.currentText())
 
     def on_workflow_selected(self, workflow_name):
-        """Shows or hides the entire transcode parameter box."""
-        is_transcode = "transcode" in workflow_name.lower()
-        self.transcode_params_widget.setVisible(is_transcode)
-        if is_transcode:
+        """
+        Parses the selected workflow's YAML file to determine if the transcode
+        parameter box should be visible.
+        """
+        from ats_oss.config import settings
+        import yaml
+
+        # Construct the path to the YAML file
+        template_path = settings.workflows_dir / f"{workflow_name}.yaml"
+
+        should_show_params = False
+        try:
+            with open(template_path, "r") as f:
+                workflow_def = yaml.safe_load(f)
+
+                # Check for the gui_options flag
+                gui_options = workflow_def.get("gui_options", {})
+                if not gui_options.get("hide_transcode_params", False):
+                    should_show_params = True
+
+        except (FileNotFoundError, yaml.YAMLError) as e:
+            # If the file is invalid or not found, default to hiding the params
+            print(f"Could not load workflow definition for '{workflow_name}': {e}")
+            should_show_params = False
+
+        self.transcode_params_widget.setVisible(should_show_params)
+        if should_show_params:
             # When the transcode box becomes visible, also update the format-specific fields
             self.on_format_selected(self.format_combo.currentText())
 

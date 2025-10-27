@@ -1,4 +1,6 @@
 name: Transcode Audio
+gui_options:
+  hide_transcode_params: false
 steps:
   - type: transcode
     params:
