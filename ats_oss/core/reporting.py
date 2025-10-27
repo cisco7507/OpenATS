@@ -14,6 +14,9 @@ class CustomJSONEncoder(json.JSONEncoder):
         if isinstance(obj, datetime):
             # Convert datetime to ISO 8601 format string
             return obj.isoformat()
+        if isinstance(obj, Path):
+            # Convert Path objects to their string representation
+            return str(obj)
         # Let the base class default method raise the TypeError
         return json.JSONEncoder.default(self, obj)
 
