@@ -165,8 +165,7 @@ def run_workflow(workflow_id: str):
         workflow.finished_at = datetime.utcnow()
         workflow.elapsed_sec = (workflow.finished_at - workflow.started_at).seconds
 
-        output_dir = settings.data_root / str(workflow_id)
-        report_path = reporting.save_json_report(step_context, output_dir)
+        report_path = reporting.save_json_report(step_context, subdirs["reports"], "workflow_summary.json")
 
         report_artifact = models.Artifact(
             workflow_id=workflow.id,
