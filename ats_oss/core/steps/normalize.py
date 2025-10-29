@@ -8,15 +8,15 @@ def run(context: dict, params: dict):
     """
     Normalizes an audio file to a target loudness and true peak, saving a JSON report.
     """
-    input_uri = context["input_uri"]
-    workflow_id = context["workflow_id"]
-    reports_dir = context["reports_dir"]
+    input_uri = context.vars["WorkInput"]
+    workflow_id = context.workflow_id
+    reports_dir = context.vars["reports_dir"]
 
     # Get the base directory for the normalized output
     normalized_dir = settings.get_workflow_subdirs(workflow_id)["normalized"]
 
     # Get metrics from the context (produced by analyze_loudness)
-    metrics = context.get("metrics", {})
+    metrics = context.metrics
     integrated_lufs = metrics.get("integrated_lufs")
 
     if integrated_lufs is None:

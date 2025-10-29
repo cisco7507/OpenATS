@@ -31,6 +31,7 @@ class Workflow(Base):
     elapsed_sec = Column(Integer)
     error_msg = Column(Text)
     template_name = Column(String)
+    params = Column(JSON)
 
     steps = relationship("Step", back_populates="workflow", cascade="all, delete-orphan")
     artifacts = relationship(

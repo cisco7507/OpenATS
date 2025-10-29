@@ -6,7 +6,7 @@ def run(context: dict, params: dict):
     """
     Performs a basic QC check for audio clipping.
     """
-    input_uri = context["input_uri"]
+    input_uri = context.vars["WorkInput"]
 
     try:
         data, rate = sf.read(input_uri)

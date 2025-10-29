@@ -1,0 +1,44 @@
+name: Conditional_Transcode_Flow
+parameters:
+  target_lufs: -23.0
+  max_truepeak_db: -2.0
+
+steps:
+- type: analyze_loudness
+
+- if: "${metrics.integrated_lufs > -22.0 or metrics.integrated_lufs < -24.0}"
+  then:
+    - type: normalize
+      target_lufs: ${parameters.target_lufs}
+      max_truepeak_db: ${parameters.max_truepeak_db}
+    - set: WorkInput
+      value: "${normalized_path}"
+  else:
+    - set: WorkInput
+      value: "${input_path}"
+
+- type: probe_channels
+
+- if: "${metrics.channels >= 6}"
+  then:
+    - type: downmix
+      mode: "5.1_to_2.0"
+    - set: WorkInput
+      value: "${downmixed_path}"
+
+- parallel:
+  - branch: wav
+    steps:
+      - type: transcode
+        format: wav
+        output_subdir: wav_output
+  - branch: mp3
+    steps:
+      - type: transcode
+        format: mp3
+        bitrate_kbps: 192
+        output_subdir: mp3_output
+
+- join: parallel
+
+- type: qc_basic

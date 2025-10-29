@@ -8,10 +8,9 @@ def run(context: dict, params: dict):
     """
     Transcodes an audio file to a new format, saving a JSON report.
     """
-    input_uri = context["input_uri"]
-    workflow_id = context["workflow_id"]
-    base_dir = context["base_dir"]
-    reports_dir = context["reports_dir"]
+    input_uri = context.vars["WorkInput"]
+    base_dir = Path(context.vars["base_dir"])
+    reports_dir = context.vars["reports_dir"]
 
     if not input_uri:
         raise ValueError("Input file URI is missing for transcode step.")

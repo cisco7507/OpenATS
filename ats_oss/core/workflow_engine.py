@@ -1,49 +1,43 @@
+from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 from datetime import datetime
+import shutil
+from pathlib import Path
 from ats_oss.db.session import SessionLocal
 from ats_oss.db import models
-from ats_oss.core import scheduler, constants
-from .steps import analyze_loudness, normalize
-import os
+from ats_oss.core import scheduler, constants, reporting
 from ats_oss.logging import log
+from ats_oss.config import settings
 
-from typing import Dict, Any, Optional
+# New Imports for Flow Control
+from .workflow_context import WorkflowContext
+from .ast_eval import evaluate_condition
+from .step_logger import StepLogger
+from .atomic_counter import AtomicCounter
 
-# A simple registry to map step types to functions
-from .steps import transcode, qc_basic
-from . import reporting
+# --- Step Implementations ---
+from .steps import (
+    analyze_loudness,
+    normalize,
+    transcode,
+    qc_basic,
+    probe_channels,
+    downmix
+)
 
 STEP_REGISTRY = {
     "analyze_loudness": analyze_loudness.run,
     "normalize": normalize.run,
     "transcode": transcode.run,
     "qc_basic": qc_basic.run,
+    "probe_channels": probe_channels.run,
+    "downmix": downmix.run,
 }
 
-from ats_oss.config import settings
-import re
+# --- Main Public API ---
 
-def _substitute_params(data: Any, params: Dict[str, Any]) -> Any:
-    """
-    Recursively substitutes placeholders in a data structure.
-    e.g., "${parameters.sample_rate}" -> "48000"
-    """
-    if isinstance(data, dict):
-        return {k: _substitute_params(v, params) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [_substitute_params(item, params) for item in data]
-    elif isinstance(data, str):
-        pattern = re.compile(r'\$\{parameters\.(\w+)\}')
-
-        def replacer(match):
-            key = match.group(1)
-            # Replace with the value from params if it exists, otherwise keep the original placeholder
-            return str(params.get(key, match.group(0)))
-
-        return pattern.sub(replacer, data)
-    return data
-
-def load_workflow_template(template_name: str):
+def load_workflow_template(template_name: str) -> Dict[str, Any]:
     template_path = settings.workflows_dir / f"{template_name}.yaml"
     log.info(f"Loading workflow template from: {template_path}")
     with open(template_path, "r") as f:
@@ -54,55 +48,32 @@ def submit_workflow(template_name: str, input_uri: str, params: Optional[Dict[st
     db = SessionLocal()
     try:
         template = load_workflow_template(template_name)
-
-        # --- Parameter Substitution Logic ---
-        # 1. Get default parameters from the template
         default_params = template.get("parameters", {})
-
-        # 2. Merge with parameters from the API call (API params take precedence)
         merged_params = default_params.copy()
         if params:
             merged_params.update(params)
-
-        # 3. Recursively substitute placeholders in the steps data
-        import copy
-        steps_data = copy.deepcopy(template["steps"])
-        steps_data = _substitute_params(steps_data, merged_params)
-        log.debug(f"Substituted steps data: {steps_data}")
 
         workflow = models.Workflow(
             name=template["name"],
             template_name=template_name,
             input_uri=input_uri,
             state=constants.STATE_QUEUED,
+            params=merged_params  # Store merged params
         )
         db.add(workflow)
-        db.flush()
-        log.info(f"Created workflow record with ID: {workflow.id}")
-
-        for i, step_def in enumerate(steps_data):
-            step = models.Step(
-                workflow_id=workflow.id,
-                index=i,
-                type=step_def["type"],
-                params=step_def.get("params", {}),
-                state=constants.STATE_QUEUED,
-            )
-            db.add(step)
-
-        log.info(f"Created {len(steps_data)} step records.")
         db.commit()
         db.refresh(workflow)
 
-        log.info(f"Submitting workflow {workflow.id} to scheduler.")
+        log.info(f"Created workflow record with ID: {workflow.id}. Submitting to scheduler.")
         scheduler.submit_job(run_workflow, workflow.id)
-
         return workflow
     finally:
         db.close()
 
+# --- Core Workflow Execution Logic ---
+
 def run_workflow(workflow_id: str):
-    log.info(f"Running workflow: {workflow_id}")
+    log.info(f"Starting workflow run for ID: {workflow_id}")
     db = SessionLocal()
     try:
         workflow = db.query(models.Workflow).get(workflow_id)
@@ -113,99 +84,170 @@ def run_workflow(workflow_id: str):
         workflow.state = constants.STATE_RUNNING
         workflow.started_at = datetime.utcnow()
         db.commit()
-        log.info(f"Workflow {workflow_id} state set to RUNNING.")
 
-        steps = sorted(workflow.steps, key=lambda s: s.index)
-        # --- Create Directory Structure ---
+        # --- Setup: Directories and Initial Context ---
         subdirs = settings.get_workflow_subdirs(workflow.id)
-        for _, dir_path in subdirs.items():
+        for dir_path in subdirs.values():
             dir_path.mkdir(parents=True, exist_ok=True)
-
-        # --- Copy Input File ---
-        import shutil
-        from pathlib import Path
 
         input_path = Path(workflow.input_uri)
         input_artifact = subdirs["input"] / input_path.name
-
         try:
             shutil.copy(workflow.input_uri, input_artifact)
         except FileNotFoundError:
-            # This is expected in the test environment. We'll create a dummy file.
-            log.warning(f"Input file not found at '{workflow.input_uri}'. Creating dummy file for processing.")
+            log.warning(f"Input file not found at '{workflow.input_uri}'. Creating dummy file.")
             input_artifact.touch()
 
-        step_context = {
-            "workflow_id": workflow.id,
-            "input_uri": str(input_artifact), # Start with the copied input
-            "base_dir": subdirs["base"],
-            "reports_dir": subdirs["reports"],
-            "logs_dir": subdirs["logs"],
+        initial_vars = {
+            "input_path": str(input_artifact),
+            "WorkInput": str(input_artifact),
+            "base_dir": str(subdirs["base"]),
+            "reports_dir": str(subdirs["reports"]),
+            "logs_dir": str(subdirs["logs"]),
         }
-        log.debug(f"Initial step context: {step_context}")
 
-        current_input = step_context["input_uri"]
+        context = WorkflowContext(workflow.id, initial_vars, workflow.params or {})
+        step_counter = AtomicCounter(initial_value=0)
+        step_logger = StepLogger(workflow.id, step_counter)
 
-        for step in steps:
-            step.state = constants.STATE_RUNNING
-            step.started_at = datetime.utcnow()
-            db.commit()
-            log.info(f"Step {step.index} ({step.type}) state set to RUNNING.")
-            log.debug(f"Executing step {step.index} with params: {step.params}")
+        # --- Recursive Step Execution ---
+        template = load_workflow_template(workflow.template_name)
+        run_steps(template["steps"], context, step_logger)
 
-            try:
-                step_func = STEP_REGISTRY.get(step.type)
-                if not step_func:
-                    raise ValueError(f"Unknown step type: {step.type}")
-
-                # Update the context with the current input for this step
-                step_context["input_uri"] = current_input
-
-                result = step_func(context=step_context, params=step.params)
-                log.debug(f"Step {step.index} returned: {result}")
-
-                # The output of this step becomes the input for the next
-                if result.get("output_path"):
-                    current_input = result["output_path"]
-
-                # Merge the metrics from the step into the main context
-                if "metrics" in result:
-                    step_context.setdefault("metrics", {}).update(result["metrics"])
-
-                step.state = constants.STATE_COMPLETED
-                log.info(f"Step {step.index} ({step.type}) completed.")
-            except Exception as e:
-                step.state = constants.STATE_FAILED
-                step.error_msg = str(e)
-                workflow.state = constants.STATE_FAILED
-                workflow.error_msg = f"Step {step.index} ({step.type}) failed: {e}"
-                db.commit()
-                log.error(f"Workflow {workflow_id} failed at step {step.index}: {e}", exc_info=True)
-                return
-
-            step.finished_at = datetime.utcnow()
-            step.elapsed_sec = (step.finished_at - step.started_at).seconds
-            db.commit()
-
+        # --- Finalization ---
         workflow.state = constants.STATE_COMPLETED
-        workflow.finished_at = datetime.utcnow()
-        workflow.elapsed_sec = (workflow.finished_at - workflow.started_at).seconds
-
-        report_path = reporting.save_json_report(step_context, subdirs["reports"], "workflow_summary.json")
-
-        report_artifact = models.Artifact(
-            workflow_id=workflow.id,
-            type="report",
-            uri=report_path
+        report_path = reporting.save_json_report(
+            {"vars": context.vars, "metrics": context.metrics},
+            subdirs["reports"],
+            "workflow_summary.json"
         )
-        db.add(report_artifact)
-
-        db.commit()
+        db.add(models.Artifact(workflow_id=workflow.id, type="report", uri=str(report_path)))
         log.info(f"Workflow {workflow_id} completed successfully.")
+
     except Exception as e:
+        log.error(f"Workflow {workflow_id} failed: {e}", exc_info=True)
         workflow.state = constants.STATE_FAILED
         workflow.error_msg = str(e)
-        db.commit()
-        log.error(f"An unexpected error occurred in workflow {workflow_id}: {e}", exc_info=True)
+
     finally:
+        workflow.finished_at = datetime.utcnow()
+        if workflow.started_at:
+            workflow.elapsed_sec = (workflow.finished_at - workflow.started_at).seconds
+        db.commit()
+        if 'context' in locals() and context.executor:
+            context.shutdown_executor()
         db.close()
+
+def run_steps(steps: List[Dict[str, Any]], context: WorkflowContext, step_logger: StepLogger):
+    """
+    Recursively executes a list of steps, handling flow control.
+    """
+    for step_def in steps:
+        # Expand variables in the step definition at runtime
+        expanded_step_def = context.expand_vars(step_def)
+        step_logger.step_counter.increment()
+
+        # --- Flow Control Handlers ---
+        if "if" in expanded_step_def:
+            handle_if(expanded_step_def, context, step_logger)
+        elif "parallel" in expanded_step_def:
+            handle_parallel(expanded_step_def, context, step_logger)
+        elif "set" in expanded_step_def:
+            handle_set(expanded_step_def, context)
+        # Note: 'join' is implicitly handled by handle_parallel for now.
+
+        # --- Standard Step Execution ---
+        elif "type" in expanded_step_def:
+            execute_step(expanded_step_def, context, step_logger)
+        else:
+            log.warning(f"Unknown step structure found: {expanded_step_def}")
+
+def execute_step(step_def: Dict[str, Any], context: WorkflowContext, step_logger: StepLogger):
+    step_type = step_def["type"]
+    step_func = STEP_REGISTRY.get(step_type)
+    if not step_func:
+        raise ValueError(f"Unknown step type: {step_type}")
+
+    db_step = step_logger.create_step(step_def)
+    step_logger.update_step_state(db_step.id, constants.STATE_RUNNING)
+
+    try:
+        log.info(f"Executing step {db_step.index} ({step_type})")
+        result = step_func(context=context, params=step_def)
+        log.debug(f"Step {step_type} result: {result}")
+
+        # --- Update Context from Step Result ---
+        if result.get("metrics"):
+            context.metrics.update(result["metrics"])
+        if result.get("output_vars"):
+            context.vars.update(result["output_vars"])
+        if result.get("output_path"):
+            context.vars["WorkInput"] = result["output_path"] # Convention
+
+        step_logger.update_step_state(db_step.id, constants.STATE_COMPLETED)
+
+    except Exception as e:
+        log.error(f"Step {db_step.index} ({step_type}) failed: {e}", exc_info=True)
+        step_logger.update_step_state(db_step.id, constants.STATE_FAILED, error_msg=str(e))
+        raise # Propagate exception to fail the workflow
+
+# --- Flow Control Implementations ---
+
+def handle_if(step_def: Dict, context: WorkflowContext, step_logger: StepLogger):
+    condition = step_def["if"]
+    log.info(f"Evaluating condition: {condition}")
+
+    if evaluate_condition(condition, context):
+        log.info("Condition is TRUE. Running 'then' branch.")
+        run_steps(step_def.get("then", []), context, step_logger)
+    else:
+        log.info("Condition is FALSE. Running 'else' branch.")
+        run_steps(step_def.get("else", []), context, step_logger)
+
+def handle_set(step_def: Dict, context: WorkflowContext):
+    variable_name = step_def["set"]
+    value = context.expand_vars(step_def["value"])
+    log.info(f"Setting variable '{variable_name}' to: {value}")
+    log.info(f"Context vars before update: {context.vars}")
+    context.vars[variable_name] = value
+    log.info(f"Context vars after update: {context.vars}")
+
+def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepLogger):
+    branches = step_def["parallel"]
+    log.info(f"Starting parallel execution of {len(branches)} branches.")
+
+    executor = context.get_or_create_executor(max_workers=len(branches))
+    futures = {}
+
+    for branch_def in branches:
+        branch_name = branch_def["branch"]
+        branch_steps = branch_def["steps"]
+
+        # Each branch gets a deep copy of the context to avoid race conditions
+        branch_context = context.copy()
+
+        future = executor.submit(run_steps, branch_steps, branch_context, step_logger)
+        futures[future] = branch_name
+
+    branch_results = {}
+    has_failed = False
+    for future in as_completed(futures):
+        branch_name = futures[future]
+        try:
+            future.result() # result() is None, but will raise exception if one occurred
+            log.info(f"Branch '{branch_name}' completed successfully.")
+            # This is a simplified result merge. A real implementation might need
+            # to merge back vars and metrics from the branch_context.
+            branch_results[branch_name] = {"state": "COMPLETED"}
+        except Exception as e:
+            has_failed = True
+            log.error(f"Branch '{branch_name}' failed: {e}", exc_info=True)
+            branch_results[branch_name] = {"state": "FAILED", "error": str(e)}
+
+    # Merge results back into the main context
+    context.vars.setdefault("branch_results", {}).update(branch_results)
+
+    if has_failed:
+        raise RuntimeError("One or more parallel branches failed.")
+
+    log.info("All parallel branches have completed.")

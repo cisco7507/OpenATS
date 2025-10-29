@@ -24,6 +24,7 @@ def save_json_report(report_data: dict, output_dir: Path, filename: str = "repor
     """
     Saves a dictionary as a JSON file in the specified directory using a custom encoder.
     """
+    output_dir = Path(output_dir)
     output_path = output_dir / filename
 
     try:

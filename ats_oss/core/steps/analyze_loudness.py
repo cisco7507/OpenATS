@@ -9,8 +9,8 @@ def run(context: dict, params: dict):
     Analyzes the loudness and peak of an audio file and saves a JSON report.
     """
     log.info("--- EXECUTING LOUDNESS STEP (ARTIFACT-BASED) ---")
-    input_uri = context["input_uri"]
-    reports_dir = context["reports_dir"]
+    input_uri = context.vars["WorkInput"]
+    reports_dir = context.vars["reports_dir"]
 
     try:
         data, rate = sf.read(input_uri)
