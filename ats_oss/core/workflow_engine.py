@@ -213,6 +213,13 @@ def handle_set(step_def: Dict, context: WorkflowContext):
     context.vars[variable_name] = value
     log.info(f"Context vars after update: {context.vars}")
 
+def run_branch(steps: List[Dict[str, Any]], context: WorkflowContext, step_logger: StepLogger):
+    """Wrapper to run steps in a branch and ensure the logger is closed."""
+    try:
+        run_steps(steps, context, step_logger)
+    finally:
+        step_logger.close()
+
 def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepLogger):
     branches = step_def["parallel"]
     log.info(f"Starting parallel execution of {len(branches)} branches.")
@@ -229,7 +236,7 @@ def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepL
         # Each branch needs its own StepLogger to avoid sharing a DB session
         branch_logger = StepLogger(context.workflow_id, step_logger.step_counter)
 
-        future = executor.submit(run_steps, branch_steps, branch_context, branch_logger)
+        future = executor.submit(run_branch, branch_steps, branch_context, branch_logger)
         context.futures[branch_name] = future
 
 def handle_join(step_def: Dict, context: WorkflowContext):
