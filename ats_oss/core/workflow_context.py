@@ -15,6 +15,7 @@ class WorkflowContext:
         self.metrics: Dict[str, Any] = {}
         self.params: Dict[str, Any] = params
         self.executor: Optional[ThreadPoolExecutor] = None
+        self.futures: Dict[str, Any] = {}
 
     def expand_vars(self, data: Any) -> Any:
         """

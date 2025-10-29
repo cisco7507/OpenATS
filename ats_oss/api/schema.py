@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import uuid
 from datetime import datetime
 from typing import Optional, List
@@ -25,6 +25,12 @@ class Workflow(WorkflowBase):
     finished_at: Optional[datetime] = None
     elapsed_sec: Optional[int] = None
     error_msg: Optional[str] = None
+
+    @field_validator("elapsed_sec", mode="before")
+    def elapsed_sec_to_int(cls, v):
+        if v is not None:
+            return int(v)
+        return v
 
     class Config:
         from_attributes = True

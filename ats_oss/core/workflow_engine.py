@@ -152,9 +152,10 @@ def run_steps(steps: List[Dict[str, Any]], context: WorkflowContext, step_logger
             handle_if(expanded_step_def, context, step_logger)
         elif "parallel" in expanded_step_def:
             handle_parallel(expanded_step_def, context, step_logger)
+        elif "join" in expanded_step_def:
+            handle_join(expanded_step_def, context)
         elif "set" in expanded_step_def:
             handle_set(expanded_step_def, context)
-        # Note: 'join' is implicitly handled by handle_parallel for now.
 
         # --- Standard Step Execution ---
         elif "type" in expanded_step_def:
@@ -217,7 +218,6 @@ def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepL
     log.info(f"Starting parallel execution of {len(branches)} branches.")
 
     executor = context.get_or_create_executor(max_workers=len(branches))
-    futures = {}
 
     for branch_def in branches:
         branch_name = branch_def["branch"]
@@ -227,17 +227,22 @@ def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepL
         branch_context = context.copy()
 
         future = executor.submit(run_steps, branch_steps, branch_context, step_logger)
-        futures[future] = branch_name
+        context.futures[branch_name] = future
+
+def handle_join(step_def: Dict, context: WorkflowContext):
+    wait_for = step_def.get("wait_for", context.futures.keys())
+    log.info(f"Joining branches: {wait_for}")
+
+    futures_to_wait = [context.futures[branch] for branch in wait_for]
 
     branch_results = {}
     has_failed = False
-    for future in as_completed(futures):
-        branch_name = futures[future]
+
+    for future in as_completed(futures_to_wait):
+        branch_name = {v: k for k, v in context.futures.items()}[future]
         try:
             future.result() # result() is None, but will raise exception if one occurred
             log.info(f"Branch '{branch_name}' completed successfully.")
-            # This is a simplified result merge. A real implementation might need
-            # to merge back vars and metrics from the branch_context.
             branch_results[branch_name] = {"state": "COMPLETED"}
         except Exception as e:
             has_failed = True
@@ -250,4 +255,4 @@ def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepL
     if has_failed:
         raise RuntimeError("One or more parallel branches failed.")
 
-    log.info("All parallel branches have completed.")
+    log.info("All joined branches have completed.")
