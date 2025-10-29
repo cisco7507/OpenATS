@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView, QComboBox
 )
 from PyQt6.QtCore import QTimer, Qt
+from .widgets import WorkflowCanvas
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -292,26 +293,29 @@ class MainWindow(QMainWindow):
         if file_path:
             self.input_uri_input.setText(file_path)
 
-    def submit_workflow(self):
+    def submit_workflow(self, template_name=None, input_uri=None, params=None):
         """Handles the submission of a new workflow."""
-        template_name = self.template_combo.currentText()
-        input_uri = self.input_uri_input.text()
+        if template_name is None:
+            template_name = self.template_combo.currentText()
+        if input_uri is None:
+            input_uri = self.input_uri_input.text()
 
         if not template_name or not input_uri:
             QMessageBox.warning(self, "Input Error", "Both fields are required.")
             return
 
-        params = {}
-        if "transcode" in template_name.lower():
-            format_name = self.format_combo.currentText()
-            params = {
-                "format": format_name,
-                "sample_rate": int(self.sample_rate_input.text()),
-            }
-            if format_name.lower() in ["mp3", "aac", "opus"]:
-                params["bitrate"] = self.bitrate_input.text()
-            else:
-                params["bit_depth"] = int(self.bit_depth_input.text()) if self.bit_depth_input.text() else None
+        if params is None:
+            params = {}
+            if "transcode" in template_name.lower():
+                format_name = self.format_combo.currentText()
+                params = {
+                    "format": format_name,
+                    "sample_rate": int(self.sample_rate_input.text()),
+                }
+                if format_name.lower() in ["mp3", "aac", "opus"]:
+                    params["bitrate"] = self.bitrate_input.text()
+                else:
+                    params["bit_depth"] = int(self.bit_depth_input.text()) if self.bit_depth_input.text() else None
 
         payload = {
             "template_name": template_name,
@@ -391,10 +395,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.palette)
 
         # Canvas (Center)
-        self.canvas = QTreeWidget()
+        self.canvas = WorkflowCanvas()
         self.canvas.setHeaderLabel("Workflow")
-        self.canvas.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.canvas.setAcceptDrops(True)
+        self.canvas.itemDropped.connect(self.add_item_to_canvas)
         self.canvas.itemSelectionChanged.connect(self.display_step_inspector)
         splitter.addWidget(self.canvas)
 
@@ -581,27 +584,6 @@ class MainWindow(QMainWindow):
             self.yaml_view.setText(yaml_str)
         except Exception as e:
             self.yaml_view.setText(f"# Error generating YAML: {e}")
-
-    def dragEnterEvent(self, event):
-        if event.source() == self.palette:
-            event.accept()
-        else:
-            super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event):
-        if event.source() == self.palette:
-            event.accept()
-        else:
-            super().dragMoveEvent(event)
-
-    def dropEvent(self, event):
-        if event.source() == self.palette:
-            item = self.palette.currentItem()
-            if item and item.parent(): # Ensure it's a draggable item, not a category
-                self.add_item_to_canvas(item.text(0))
-                event.accept()
-        else:
-            super().dropEvent(event)
 
     def add_item_to_canvas(self, name):
         """Adds a new item to the canvas."""
