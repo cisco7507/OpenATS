@@ -2,6 +2,7 @@ name: Conditional_Transcode_Flow
 parameters:
   target_lufs: -23.0
   max_truepeak_db: -2.0
+  min_channels_for_downmix: 6
 
 steps:
 - type: analyze_loudness
@@ -19,11 +20,11 @@ steps:
 
 - type: probe_channels
 
-- if: "${metrics.channels >= 6}"
+- if: "${metrics.channels >= parameters.min_channels_for_downmix}"
   then:
     - type: downmix
       mode: "5.1_to_2.0"
-      min_channels: 6
+      min_channels: ${parameters.min_channels_for_downmix}
     - set: WorkInput
       value: "${downmixed_path}"
 

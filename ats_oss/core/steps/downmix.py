@@ -26,7 +26,7 @@ def run(context: dict, params: dict):
 
     output_path = output_dir / f"{input_path.stem}_downmix.wav"
 
-    min_channels = params.get("min_channels", 6)
+    min_channels = int(params.get("min_channels", 6))
 
     # Downmix is only applied if the source has at least min_channels
     source_channels = context.metrics.get("channels", 0)

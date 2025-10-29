@@ -16,7 +16,7 @@ echo "Waiting for server to start (PID: $SERVER_PID)..."
 sleep 10
 
 echo "Running the test submission script..."
-python temp_test.py
+python -m ats_oss.scripts.demo_submit
 
 echo "Shutting down the server..."
 kill $SERVER_PID

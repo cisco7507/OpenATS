@@ -174,12 +174,12 @@ def execute_step(step_def: Dict[str, Any], context: WorkflowContext, step_logger
     if not step_func:
         raise ValueError(f"Unknown step type: {step_type}")
 
-    db_step = step_logger.create_step(step_def)
+    db_step = step_logger.create_step(expanded_step_def)
     step_logger.update_step_state(db_step.id, constants.STATE_RUNNING)
 
     try:
         log.info(f"Executing step {db_step.index} ({step_type})")
-        result = step_func(context=context, params=step_def)
+        result = step_func(context=context, params=expanded_step_def)
         log.debug(f"Step {step_type} result: {result}")
 
         # --- Update Context from Step Result ---

@@ -49,10 +49,25 @@ if __name__ == "__main__":
     # Create a dummy silent WAV file for testing
     samplerate = 48000
     duration = 1.0
-    channels = 2
-    data = np.zeros((int(samplerate * duration), channels))
-    sf.write("test_audio.wav", data, samplerate)
 
-    submitted_workflow = submit_workflow("normalize_and_qc", "test_audio.wav")
-    if submitted_workflow and submitted_workflow.get("id"):
-        get_workflow_status(submitted_workflow["id"])
+    # 2-channel
+    data_2ch = np.zeros((int(samplerate * duration), 2))
+    sf.write("test_audio_2ch.wav", data_2ch, samplerate)
+
+    # 6-channel
+    data_6ch = np.zeros((int(samplerate * duration), 6))
+    sf.write("test_audio_6ch.wav", data_6ch, samplerate)
+
+    submitted_workflow_2ch = submit_workflow("Conditional_Transcode_Flow", "test_audio_2ch.wav")
+    submitted_workflow_6ch = submit_workflow("Conditional_Transcode_Flow", "test_audio_6ch.wav")
+
+    import time
+    time.sleep(5) # Wait for workflows to complete
+
+    if submitted_workflow_2ch and submitted_workflow_2ch.get("id"):
+        print("\nFinal Workflow status for 2ch:")
+        get_workflow_status(submitted_workflow_2ch["id"])
+
+    if submitted_workflow_6ch and submitted_workflow_6ch.get("id"):
+        print("\nFinal Workflow status for 6ch:")
+        get_workflow_status(submitted_workflow_6ch["id"])
