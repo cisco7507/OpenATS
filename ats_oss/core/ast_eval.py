@@ -8,6 +8,11 @@ log = getLogger(__name__)
 # We'll remove it, and a few others we don't need.
 unwanted_symbols = ['eval', 'exec', 'exit', 'quit', 'help', 'dir']
 
+class AttrDict:
+    """A dictionary that allows attribute-style access."""
+    def __init__(self, d):
+        self.__dict__ = d
+
 class SafeEvaluator(Interpreter):
     """
     A customized asteval Interpreter that prevents access to unsafe
@@ -52,9 +57,9 @@ def evaluate_condition(expression: str, context: 'WorkflowContext') -> bool:
 
     # Create a combined symbol table for the evaluator
     symtable = {
-        'vars': context.vars,
-        'metrics': context.metrics,
-        'parameters': context.params
+        'vars': AttrDict(context.vars),
+        'metrics': AttrDict(context.metrics),
+        'parameters': AttrDict(context.params)
     }
 
     aeval = SafeEvaluator(symtable=symtable)

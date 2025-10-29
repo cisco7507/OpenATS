@@ -17,16 +17,18 @@ def run(context: dict, params: dict):
     except Exception as e:
         raise RuntimeError(f"Failed to read audio file: {e}")
 
-    meter = pyln.Meter(rate)
-    integrated_lufs = meter.integrated_loudness(data)
-    peak_dbfs = 20 * np.log10(np.max(np.abs(data)))
-
-    log.info(f"Loudness Analysis Complete: Integrated={integrated_lufs:.2f} LUFS, Peak={peak_dbfs:.2f} dBFS")
-
-    metrics = {
-        "integrated_lufs": integrated_lufs,
-        "true_peak_db": peak_dbfs,
-    }
+    try:
+        meter = pyln.Meter(rate)
+        integrated_lufs = meter.integrated_loudness(data)
+        peak_dbfs = 20 * np.log10(np.max(np.abs(data)))
+        log.info(f"Loudness Analysis Complete: Integrated={integrated_lufs:.2f} LUFS, Peak={peak_dbfs:.2f} dBFS")
+        metrics = {
+            "integrated_lufs": integrated_lufs,
+            "true_peak_db": peak_dbfs,
+        }
+    except ValueError as e:
+        log.warning(f"Could not analyze loudness: {e}")
+        metrics = {}
 
     reporting.save_json_report(metrics, reports_dir, "analyze_loudness.json")
 
