@@ -146,28 +146,30 @@ def run_steps(steps: List[Dict[str, Any]], context: WorkflowContext, step_logger
     Recursively executes a list of steps, handling flow control.
     """
     for step_def in steps:
-        # Expand variables in the step definition at runtime
-        expanded_step_def = context.expand_vars(step_def)
         step_logger.step_counter.increment()
 
         # --- Flow Control Handlers ---
-        if "if" in expanded_step_def:
-            handle_if(expanded_step_def, context, step_logger)
-        elif "parallel" in expanded_step_def:
-            handle_parallel(expanded_step_def, context, step_logger)
-        elif "join" in expanded_step_def:
-            handle_join(expanded_step_def, context)
-        elif "set" in expanded_step_def:
-            handle_set(expanded_step_def, context)
+        if "if" in step_def:
+            handle_if(step_def, context, step_logger)
+        elif "parallel" in step_def:
+            handle_parallel(step_def, context, step_logger)
+        elif "join" in step_def:
+            handle_join(step_def, context)
+        elif "set" in step_def:
+            handle_set(step_def, context)
 
         # --- Standard Step Execution ---
-        elif "type" in expanded_step_def:
-            execute_step(expanded_step_def, context, step_logger)
+        elif "type" in step_def:
+            execute_step(step_def, context, step_logger)
         else:
-            log.warning(f"Unknown step structure found: {expanded_step_def}")
+            log.warning(f"Unknown step structure found: {step_def}")
 
 def execute_step(step_def: Dict[str, Any], context: WorkflowContext, step_logger: StepLogger):
-    step_type = step_def["type"]
+    # Just-in-time variable expansion
+    last_valid_input = context.vars.get("WorkInput", "")
+    expanded_step_def = context.expand_vars(step_def, fallback=last_valid_input)
+
+    step_type = expanded_step_def["type"]
     step_func = STEP_REGISTRY.get(step_type)
     if not step_func:
         raise ValueError(f"Unknown step type: {step_type}")

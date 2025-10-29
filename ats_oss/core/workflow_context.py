@@ -17,7 +17,7 @@ class WorkflowContext:
         self.executor: Optional[ThreadPoolExecutor] = None
         self.futures: Dict[str, Any] = {}
 
-    def expand_vars(self, data: Any) -> Any:
+    def expand_vars(self, data: Any, fallback: Optional[str] = None) -> Any:
         """
         Recursively substitutes placeholders in a data structure.
         Placeholders can be in the format ${scope.key}, where scope is one of
@@ -26,22 +26,24 @@ class WorkflowContext:
         Example:
             "${vars.input_path}" -> "/path/to/file.wav"
             "${metrics.integrated_lufs}" -> -23.5
+
+        Args:
+            data: The data structure (e.g., dict, list, str) to expand.
+            fallback: A value to use if a placeholder cannot be resolved.
+                      If None, a standard "_NOT_FOUND" string is used.
         """
         if isinstance(data, dict):
-            return {k: self.expand_vars(v) for k, v in data.items()}
+            return {k: self.expand_vars(v, fallback) for k, v in data.items()}
         elif isinstance(data, list):
-            return [self.expand_vars(item) for item in data]
+            return [self.expand_vars(item, fallback) for item in data]
         elif isinstance(data, str):
-            # Regex to find placeholders like ${scope.key} or ${key}
             pattern = re.compile(r'\$\{(?:(\w+)\.)?(\w+)\}')
 
             def replacer(match):
                 scope_name, key = match.groups()
+                source = None
 
-                if scope_name is None:
-                    # Default to 'vars' scope if not specified
-                    source = self.vars
-                elif scope_name == 'vars':
+                if scope_name is None or scope_name == 'vars':
                     source = self.vars
                 elif scope_name == 'metrics':
                     source = self.metrics
@@ -49,16 +51,21 @@ class WorkflowContext:
                     source = self.params
                 else:
                     log.warning(f"Invalid scope '{scope_name}' in placeholder '{match.group(0)}'.")
-                    return match.group(0) # Return original placeholder
+                    return match.group(0)
 
-                value = source.get(key, f'<{scope_name or "vars"}.{key}_NOT_FOUND>')
+                default_value = fallback if fallback is not None else f'<{scope_name or "vars"}.{key}_NOT_FOUND>'
+                value = source.get(key, default_value)
 
                 return str(value)
 
-            # Keep expanding until no placeholders are left
-            while pattern.search(data):
-                data = pattern.sub(replacer, data)
-            return data
+            expanded_str = data
+            # Loop to handle nested placeholders
+            while pattern.search(expanded_str):
+                new_str = pattern.sub(replacer, expanded_str)
+                if new_str == expanded_str:
+                    break
+                expanded_str = new_str
+            return expanded_str
         return data
 
     def copy(self) -> 'WorkflowContext':

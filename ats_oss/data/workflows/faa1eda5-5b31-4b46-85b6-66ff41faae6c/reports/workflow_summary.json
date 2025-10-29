@@ -1,0 +1,22 @@
+{
+  "vars": {
+    "input_path": "/app/ats_oss/data/workflows/faa1eda5-5b31-4b46-85b6-66ff41faae6c/input/test_audio_2ch.wav",
+    "WorkInput": "/app/ats_oss/data/workflows/faa1eda5-5b31-4b46-85b6-66ff41faae6c/input/test_audio_2ch.wav",
+    "base_dir": "/app/ats_oss/data/workflows/faa1eda5-5b31-4b46-85b6-66ff41faae6c",
+    "reports_dir": "/app/ats_oss/data/workflows/faa1eda5-5b31-4b46-85b6-66ff41faae6c/reports",
+    "logs_dir": "/app/ats_oss/data/workflows/faa1eda5-5b31-4b46-85b6-66ff41faae6c/logs",
+    "branch_results": {
+      "wav": {
+        "state": "COMPLETED"
+      },
+      "mp3": {
+        "state": "COMPLETED"
+      }
+    }
+  },
+  "metrics": {
+    "integrated_lufs": -Infinity,
+    "true_peak_db": -Infinity,
+    "channels": 2
+  }
+}

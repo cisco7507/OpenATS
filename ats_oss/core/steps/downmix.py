@@ -26,28 +26,48 @@ def run(context: dict, params: dict):
 
     output_path = output_dir / f"{input_path.stem}_downmix.wav"
 
-    # Downmix is only applied if the source has more than 2 channels
+    min_channels = params.get("min_channels", 6)
+
+    # Downmix is only applied if the source has at least min_channels
     source_channels = context.metrics.get("channels", 0)
-    if source_channels < 6:
-        log.warning(f"Skipping downmix: source has {source_channels} channels, which is not >= 6.")
+    if source_channels < min_channels:
+        log.warning(f"Skipping downmix: source has {source_channels} channels, which is not >= {min_channels}.")
+        context.vars["downmixed_path"] = input_uri
         return {
             "output_path": None, # No new file was created
-            "output_vars": {"downmixed_path": input_uri} # Pass the original path forward
         }
 
     log.info(f"Downmixing '{input_path.name}' from {source_channels} channels to stereo.")
 
     try:
-        stream = ffmpeg.input(str(input_path))
-        # Use the 'pan' audio filter for custom matrix mixing
-        stream = ffmpeg.filter_(stream, 'pan', LT_RT_MATRIX)
-        stream = ffmpeg.output(stream, str(output_path))
-        ffmpeg.run(stream, overwrite_output=True, quiet=True)
+        if params.get("mode") == "5.1_to_2.0":
+            # The ffmpeg-python library is having issues with escaping the pan filter string.
+            # We will build and run the command directly using subprocess to avoid this.
+            # The -filter_complex option is tricky to get right with subprocess.
+            # Using -af (audio filter) is a more reliable way to apply the pan filter.
+            pan_matrix = "pan=stereo|c0=0.5*c0+0.5*c2+0.5*c4|c1=0.5*c1+0.5*c2+0.5*c5"
+            command = [
+                'ffmpeg',
+                '-i', str(input_path),
+                '-af', pan_matrix,
+                '-y', # Overwrite output
+                str(output_path)
+            ]
+
+            log.info(f"Executing direct ffmpeg command: {' '.join(command)}")
+
+            import subprocess
+            result = subprocess.run(command, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                log.error(f"FFmpeg command failed with stderr:\n{result.stderr}")
+                raise RuntimeError(f"FFmpeg failed to downmix: {result.stderr}")
 
         log.info(f"Successfully created downmixed file: {output_path}")
-    except ffmpeg.Error as e:
-        log.error("FFmpeg error during downmix:", exc_info=True)
-        raise RuntimeError(f"FFmpeg failed to downmix: {e.stderr.decode()}") from e
+        context.vars["downmixed_path"] = str(output_path)
+    except Exception as e:
+        log.error("An unexpected error occurred during downmix:", exc_info=True)
+        raise RuntimeError(f"An unexpected error occurred during downmix: {e}") from e
 
     metrics = {
         "downmix_applied": True,

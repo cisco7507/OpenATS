@@ -23,6 +23,7 @@ steps:
   then:
     - type: downmix
       mode: "5.1_to_2.0"
+      min_channels: 6
     - set: WorkInput
       value: "${downmixed_path}"
 
