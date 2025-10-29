@@ -110,12 +110,15 @@ def run_workflow(workflow_id: str):
         step_counter = AtomicCounter(initial_value=0)
         step_logger = StepLogger(workflow.id, step_counter)
 
-        # --- Recursive Step Execution ---
-        template = load_workflow_template(workflow.template_name)
-        run_steps(template["steps"], context, step_logger)
+        try:
+            # --- Recursive Step Execution ---
+            template = load_workflow_template(workflow.template_name)
+            run_steps(template["steps"], context, step_logger)
 
-        # --- Finalization ---
-        workflow.state = constants.STATE_COMPLETED
+            # --- Finalization ---
+            workflow.state = constants.STATE_COMPLETED
+        finally:
+            step_logger.close()
         report_path = reporting.save_json_report(
             {"vars": context.vars, "metrics": context.metrics},
             subdirs["reports"],
