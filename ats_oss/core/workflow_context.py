@@ -32,13 +32,16 @@ class WorkflowContext:
         elif isinstance(data, list):
             return [self.expand_vars(item) for item in data]
         elif isinstance(data, str):
-            # Regex to find all placeholders like ${scope.key}
-            pattern = re.compile(r'\$\{(\w+)\.(\w+)\}')
+            # Regex to find placeholders like ${scope.key} or ${key}
+            pattern = re.compile(r'\$\{(?:(\w+)\.)?(\w+)\}')
 
             def replacer(match):
                 scope_name, key = match.groups()
 
-                if scope_name == 'vars':
+                if scope_name is None:
+                    # Default to 'vars' scope if not specified
+                    source = self.vars
+                elif scope_name == 'vars':
                     source = self.vars
                 elif scope_name == 'metrics':
                     source = self.metrics
@@ -46,11 +49,10 @@ class WorkflowContext:
                     source = self.params
                 else:
                     log.warning(f"Invalid scope '{scope_name}' in placeholder '{match.group(0)}'.")
-                    return match.group(0) # Return the original placeholder if scope is invalid
+                    return match.group(0) # Return original placeholder
 
-                value = source.get(key, f'<{scope_name}.{key}_NOT_FOUND>')
+                value = source.get(key, f'<{scope_name or "vars"}.{key}_NOT_FOUND>')
 
-                # It's crucial to convert the value to a string for substitution
                 return str(value)
 
             # Keep expanding until no placeholders are left
