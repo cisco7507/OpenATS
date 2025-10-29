@@ -26,6 +26,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.submit_tab, "Submit")
         self.setup_submit_tab()
 
+        # Create the Composer tab
+        self.composer_tab = QWidget()
+        self.tabs.addTab(self.composer_tab, "Composer")
+        self.setup_composer_tab()
+
         # Status bar for connection status
         self.status_label = QLabel("Connecting to server...")
         self.statusBar().addWidget(self.status_label)
@@ -340,3 +345,305 @@ class MainWindow(QMainWindow):
                 self.status_label.setText(f"Server connection failed. Status: {response.status_code}")
         except requests.exceptions.ConnectionError:
             self.status_label.setText("Server not found. Is it running?")
+
+    def setup_composer_tab(self):
+        """Sets up the layout and widgets for the Composer tab."""
+        layout = QVBoxLayout(self.composer_tab)
+
+        # View switcher (Radio Buttons)
+        view_switcher_layout = QHBoxLayout()
+        self.composer_view_radio = QPushButton("Composer View")
+        self.composer_view_radio.setCheckable(True)
+        self.composer_view_radio.setChecked(True)
+        self.yaml_view_radio = QPushButton("YAML View")
+        self.yaml_view_radio.setCheckable(True)
+        view_switcher_layout.addWidget(self.composer_view_radio)
+        view_switcher_layout.addWidget(self.yaml_view_radio)
+        layout.addLayout(view_switcher_layout)
+
+        # Template management buttons
+        template_layout = QHBoxLayout()
+        self.load_template_button = QPushButton("Load Template")
+        self.save_template_button = QPushButton("Save as Template")
+        self.submit_composer_button = QPushButton("Submit from Composer")
+        template_layout.addWidget(self.load_template_button)
+        template_layout.addWidget(self.save_template_button)
+        template_layout.addWidget(self.submit_composer_button)
+        layout.addLayout(template_layout)
+
+        # Main content area
+        self.composer_stack = QWidget()
+        composer_stack_layout = QVBoxLayout(self.composer_stack)
+        layout.addWidget(self.composer_stack)
+
+        # --- Composer View ---
+        self.composer_view = QWidget()
+        composer_layout = QHBoxLayout(self.composer_view)
+        composer_stack_layout.addWidget(self.composer_view)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        composer_layout.addWidget(splitter)
+
+        # Palette (Left)
+        self.palette = QTreeWidget()
+        self.palette.setHeaderLabel("Steps")
+        self.palette.setDragEnabled(True)
+        splitter.addWidget(self.palette)
+
+        # Canvas (Center)
+        self.canvas = QTreeWidget()
+        self.canvas.setHeaderLabel("Workflow")
+        self.canvas.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.canvas.setAcceptDrops(True)
+        self.canvas.itemSelectionChanged.connect(self.display_step_inspector)
+        splitter.addWidget(self.canvas)
+
+        # Inspector (Right)
+        self.inspector = QWidget()
+        self.inspector_layout = QFormLayout(self.inspector)
+        self.inspector_layout.addRow(QLabel("Select a step to configure."))
+        splitter.addWidget(self.inspector)
+
+        # --- YAML View ---
+        self.yaml_view = QTextEdit()
+        self.yaml_view.setPlaceholderText("YAML definition will appear here...")
+        self.yaml_view.textChanged.connect(self.update_canvas_from_yaml)
+        composer_stack_layout.addWidget(self.yaml_view)
+        self.yaml_view.hide()
+
+        # Connections
+        self.composer_view_radio.clicked.connect(self.show_composer_view)
+        self.yaml_view_radio.clicked.connect(self.show_yaml_view)
+        self.load_template_button.clicked.connect(self.load_template)
+        self.save_template_button.clicked.connect(self.save_template)
+        self.submit_composer_button.clicked.connect(self.submit_from_composer)
+
+        self.populate_palette()
+
+    def submit_from_composer(self):
+        """Submits the workflow currently in the composer."""
+        from ats_oss.config import settings
+        import tempfile
+        import os
+
+        # Use the file browser from the submit tab
+        self.browse_file()
+        input_uri = self.input_uri_input.text()
+        if not input_uri:
+            QMessageBox.warning(self, "Input Error", "An input file is required.")
+            return
+
+        # Create a temporary file for the workflow
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".yaml", dir=settings.workflows_dir) as f:
+            f.write(self.yaml_view.toPlainText())
+            temp_workflow_name = os.path.splitext(os.path.basename(f.name))[0]
+
+        # Submit the temporary workflow
+        self.submit_workflow(template_name=temp_workflow_name, input_uri=input_uri, params={})
+
+        # Clean up the temporary file
+        os.remove(f.name)
+
+
+    def load_template(self):
+        """Loads a workflow template from a YAML file."""
+        from ats_oss.config import settings
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Workflow Template", str(settings.workflows_dir), "YAML Files (*.yaml)"
+        )
+        if file_path:
+            with open(file_path, "r") as f:
+                self.yaml_view.setText(f.read())
+            self.update_canvas_from_yaml()
+
+    def save_template(self):
+        """Saves the current workflow to a YAML file."""
+        from ats_oss.config import settings
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Workflow Template", str(settings.workflows_dir), "YAML Files (*.yaml)"
+        )
+        if file_path:
+            with open(file_path, "w") as f:
+                f.write(self.yaml_view.toPlainText())
+
+    def populate_palette(self):
+        """Dynamically populates the palette with steps and control blocks."""
+        from ats_oss.core.workflow_engine import STEP_REGISTRY
+
+        # Steps Category
+        steps_category = QTreeWidgetItem(self.palette, ["Steps"])
+        for step_name in sorted(STEP_REGISTRY.keys()):
+            step_item = QTreeWidgetItem(steps_category, [step_name])
+            step_item.setFlags(step_item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
+
+        # Control Flow Category
+        control_category = QTreeWidgetItem(self.palette, ["Control Flow"])
+        control_blocks = ["if", "parallel", "join", "set"]
+        for block_name in control_blocks:
+            block_item = QTreeWidgetItem(control_category, [block_name])
+            block_item.setFlags(block_item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
+
+        self.palette.expandAll()
+
+    def show_composer_view(self):
+        self.composer_view.show()
+        self.yaml_view.hide()
+        self.composer_view_radio.setChecked(True)
+        self.yaml_view_radio.setChecked(False)
+
+    def show_yaml_view(self):
+        self.composer_view.hide()
+        self.yaml_view.show()
+        self.composer_view_radio.setChecked(False)
+        self.yaml_view_radio.setChecked(True)
+        self.update_yaml_view()
+
+    def update_canvas_from_yaml(self):
+        """Parses the YAML and rebuilds the canvas tree."""
+        import yaml
+        self.canvas.clear()
+
+        try:
+            yaml_str = self.yaml_view.toPlainText()
+            if not yaml_str:
+                return
+
+            workflow_def = yaml.safe_load(yaml_str)
+            if not workflow_def or "steps" not in workflow_def:
+                return
+
+            def dict_to_item(parent_item, step_dict):
+                step_type = step_dict.get("type", "unknown")
+                new_item = QTreeWidgetItem(parent_item, [step_type])
+                new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
+                new_item.setData(0, Qt.ItemDataRole.UserRole, step_dict)
+
+                # Recursively add children
+                children = []
+                if "then" in step_dict:
+                    children = step_dict["then"]
+                elif "steps" in step_dict:
+                    children = step_dict["steps"]
+
+                for child_dict in children:
+                    dict_to_item(new_item, child_dict)
+
+            root = self.canvas.invisibleRootItem()
+            for step in workflow_def["steps"]:
+                dict_to_item(root, step)
+
+            self.canvas.expandAll()
+
+        except yaml.YAMLError as e:
+            QMessageBox.warning(self, "YAML Error", f"Could not parse YAML: {e}")
+
+    def update_yaml_view(self):
+        """Generates YAML from the canvas and displays it."""
+        import yaml
+
+        def item_to_dict(item):
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            if not data:
+                return {}
+
+            # Start with the type
+            result = {"type": data["type"]}
+
+            # Add other parameters from stored data
+            for key, value in data.items():
+                if key != "type":
+                    result[key] = value
+
+            # Recursively add children for nested structures
+            children = []
+            for i in range(item.childCount()):
+                children.append(item_to_dict(item.child(i)))
+
+            if children:
+                # This is a simplistic approach. A real implementation would need
+                # to handle if/then/else, parallel branches, etc.
+                if "if" in result:
+                    result["then"] = children
+                elif "parallel" in result:
+                    result["steps"] = children
+                else:
+                    result["steps"] = children
+
+            return result
+
+        workflow_dict = {
+            "name": "Composed Workflow",
+            "steps": [item_to_dict(self.canvas.topLevelItem(i)) for i in range(self.canvas.topLevelItemCount())]
+        }
+
+        try:
+            yaml_str = yaml.dump(workflow_dict, sort_keys=False)
+            self.yaml_view.setText(yaml_str)
+        except Exception as e:
+            self.yaml_view.setText(f"# Error generating YAML: {e}")
+
+    def dragEnterEvent(self, event):
+        if event.source() == self.palette:
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.source() == self.palette:
+            event.accept()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.source() == self.palette:
+            item = self.palette.currentItem()
+            if item and item.parent(): # Ensure it's a draggable item, not a category
+                self.add_item_to_canvas(item.text(0))
+                event.accept()
+        else:
+            super().dropEvent(event)
+
+    def add_item_to_canvas(self, name):
+        """Adds a new item to the canvas."""
+        parent = self.canvas.currentItem() or self.canvas.invisibleRootItem()
+        new_item = QTreeWidgetItem(parent, [name])
+        new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
+        # Store metadata with the item
+        new_item.setData(0, Qt.ItemDataRole.UserRole, {"type": name})
+
+    def display_step_inspector(self):
+        """Displays the configuration options for the selected step."""
+        from .step_meta import STEP_METADATA
+
+        # Clear the inspector
+        for i in reversed(range(self.inspector_layout.count())):
+            self.inspector_layout.itemAt(i).widget().setParent(None)
+
+        selected_items = self.canvas.selectedItems()
+        if not selected_items:
+            self.inspector_layout.addRow(QLabel("Select a step to configure."))
+            return
+
+        item = selected_items[0]
+        step_type = item.data(0, Qt.ItemDataRole.UserRole)["type"]
+        params = STEP_METADATA.get(step_type, [])
+
+        if not params:
+            self.inspector_layout.addRow(QLabel(f"No parameters for '{step_type}'."))
+            return
+
+        for param in params:
+            widget = None
+            if param["type"] == "string":
+                widget = QLineEdit(str(param.get("default", "")))
+            elif param["type"] == "integer":
+                widget = QLineEdit(str(param.get("default", 0))) # Use QLineEdit for flexibility
+            elif param["type"] == "float":
+                widget = QLineEdit(str(param.get("default", 0.0)))
+            elif param["type"] == "combo":
+                widget = QComboBox()
+                widget.addItems(param.get("options", []))
+
+            if widget:
+                self.inspector_layout.addRow(param["name"], widget)
+                # TODO: Add logic to save the value back to the item's data
