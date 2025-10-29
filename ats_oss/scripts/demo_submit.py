@@ -1,6 +1,8 @@
 import requests
 import json
 import uuid
+import numpy as np
+import soundfile as sf
 
 API_URL = "http://127.0.0.1:8650/workflows"
 
@@ -44,6 +46,13 @@ def get_workflow_status(wfuuid: str):
 
 
 if __name__ == "__main__":
-    submitted_workflow = submit_workflow("normalize_and_qc", "path/to/your/audio.wav")
+    # Create a dummy silent WAV file for testing
+    samplerate = 48000
+    duration = 1.0
+    channels = 2
+    data = np.zeros((int(samplerate * duration), channels))
+    sf.write("test_audio.wav", data, samplerate)
+
+    submitted_workflow = submit_workflow("normalize_and_qc", "test_audio.wav")
     if submitted_workflow and submitted_workflow.get("id"):
         get_workflow_status(submitted_workflow["id"])

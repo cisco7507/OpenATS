@@ -132,7 +132,7 @@ def run_workflow(workflow_id: str):
     finally:
         workflow.finished_at = datetime.utcnow()
         if workflow.started_at:
-            workflow.elapsed_sec = (workflow.finished_at - workflow.started_at).seconds
+            workflow.elapsed_sec = int((workflow.finished_at - workflow.started_at).total_seconds())
         db.commit()
         if 'context' in locals() and context.executor:
             context.shutdown_executor()

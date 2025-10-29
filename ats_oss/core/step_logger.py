@@ -59,7 +59,7 @@ class StepLogger:
             elif state in [constants.STATE_COMPLETED, constants.STATE_FAILED]:
                 step.finished_at = now
                 if step.started_at:
-                    step.elapsed_sec = (now - step.started_at).seconds
+                    step.elapsed_sec = int((now - step.started_at).total_seconds())
 
             if error_msg:
                 step.error_msg = error_msg
