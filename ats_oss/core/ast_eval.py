@@ -43,7 +43,12 @@ def evaluate_condition(expression: str, context: 'WorkflowContext') -> bool:
 
     # Expand any variables in the expression before evaluation
     expanded_expr = context.expand_vars(expression)
-    log.debug(f"Evaluating expanded expression: '{expanded_expr}'")
+
+    # Strip the ${...} wrapper if it exists, so we evaluate the inner expression
+    if expanded_expr.startswith('${') and expanded_expr.endswith('}'):
+        expanded_expr = expanded_expr[2:-1]
+
+    log.debug(f"Evaluating expression: '{expanded_expr}'")
 
     # Create a combined symbol table for the evaluator
     symtable = {

@@ -226,7 +226,10 @@ def handle_parallel(step_def: Dict, context: WorkflowContext, step_logger: StepL
         # Each branch gets a deep copy of the context to avoid race conditions
         branch_context = context.copy()
 
-        future = executor.submit(run_steps, branch_steps, branch_context, step_logger)
+        # Each branch needs its own StepLogger to avoid sharing a DB session
+        branch_logger = StepLogger(context.workflow_id, step_logger.step_counter)
+
+        future = executor.submit(run_steps, branch_steps, branch_context, branch_logger)
         context.futures[branch_name] = future
 
 def handle_join(step_def: Dict, context: WorkflowContext):
