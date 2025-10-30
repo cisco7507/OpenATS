@@ -1,5 +1,15 @@
 import yaml
+import sys
 from pathlib import Path
+
+def get_bundle_dir():
+    """Get the base directory for the running application, handling PyInstaller."""
+    if getattr(sys, 'frozen', False):
+        # The application is running in a PyInstaller bundle
+        return Path(sys._MEIPASS)
+    else:
+        # The application is running in a normal Python environment
+        return Path(__file__).resolve().parent.parent
 
 class Config:
     _instance = None
@@ -11,11 +21,12 @@ class Config:
         return cls._instance
 
     def load_config(self):
-        # Use pathlib for robust path handling
-        # __file__ is ats_oss/config.py, so parent is ats_oss/
-        self.project_root = Path(__file__).parent.resolve()
-        self.config_path = self.project_root / "config" / "config.yaml"
-        self.workflows_dir = self.project_root / "workflows"
+        self.bundle_dir = get_bundle_dir()
+
+        # In bundle mode, config and workflows are in the root.
+        # In source mode, they are in ats_oss/
+        self.config_path = self.bundle_dir / "ats_oss" / "config" / "config.yaml"
+        self.workflows_dir = self.bundle_dir / "ats_oss" / "workflows"
 
         with open(self.config_path, "r") as f:
             self.config = yaml.safe_load(f)
@@ -30,8 +41,11 @@ class Config:
 
     @property
     def data_root(self):
-        # Resolve the data_root relative to the project root
-        return self.project_root / self.config["paths"]["data_root"]
+        # For bundled apps, always use the user's home directory for data
+        if getattr(sys, 'frozen', False):
+            return Path.home() / ".ats_oss" / "data"
+        # In source mode, use the project-relative path
+        return self.bundle_dir / self.config["paths"]["data_root"]
 
     def get_workflow_dir(self, workflow_id):
         return self.data_root / "workflows" / str(workflow_id)
