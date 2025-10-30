@@ -2,7 +2,8 @@ import requests
 from PyQt6.QtWidgets import (
     QMainWindow, QLabel, QVBoxLayout, QWidget, QTabWidget, QTreeWidget,
     QTreeWidgetItem, QLineEdit, QPushButton, QMessageBox, QFormLayout, QTextEdit,
-    QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView, QComboBox
+    QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView, QComboBox,
+    QDoubleSpinBox, QSpinBox, QPlainTextEdit
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -29,6 +30,9 @@ class MainWindow(QMainWindow):
         # Create the Composer tab
         self.composer_tab = QWidget()
         self.tabs.addTab(self.composer_tab, "Composer")
+        # --- Composer Data ---
+        self.global_params = {}
+        self.inspector_widgets = {}
         self.setup_composer_tab()
 
         # Status bar for connection status
@@ -401,7 +405,7 @@ class MainWindow(QMainWindow):
         # Canvas (Center)
         self.canvas = QTreeWidget()
         self.canvas.setHeaderLabel("Workflow")
-        self.canvas.itemSelectionChanged.connect(self.display_step_inspector)
+        self.canvas.itemSelectionChanged.connect(self._on_canvas_selection_changed)
 
         canvas_layout = QVBoxLayout()
         self.remove_step_button = QPushButton("Remove Selected Item")
@@ -414,13 +418,13 @@ class MainWindow(QMainWindow):
         # Inspector (Right)
         self.inspector = QWidget()
         self.inspector_layout = QFormLayout(self.inspector)
-        self.inspector_layout.addRow(QLabel("Select a step to configure."))
         splitter.addWidget(self.inspector)
 
         # --- YAML View ---
         self.yaml_view = QTextEdit()
         self.yaml_view.setPlaceholderText("YAML definition will appear here...")
-        self.yaml_view.textChanged.connect(self.update_canvas_from_yaml)
+        self._is_updating_yaml = False
+        self.yaml_view.textChanged.connect(self._on_yaml_text_changed)
         composer_stack_layout.addWidget(self.yaml_view)
         self.yaml_view.hide()
 
@@ -434,6 +438,7 @@ class MainWindow(QMainWindow):
         self.remove_step_button.clicked.connect(self.remove_selected_item)
 
         self.populate_palette()
+        self._on_canvas_selection_changed() # Initial population of inspector
 
     def remove_selected_item(self):
         """Removes the selected item from the canvas."""
@@ -442,9 +447,9 @@ class MainWindow(QMainWindow):
             return
 
         item = selected_items[0]
-        # Get the parent of the item, or the invisible root if it's a top-level item
         parent = item.parent() or self.canvas.invisibleRootItem()
         parent.removeChild(item)
+        self.update_yaml_view()
 
     def add_selected_step_to_canvas(self):
         """Adds the selected step from the palette to the canvas."""
@@ -459,27 +464,20 @@ class MainWindow(QMainWindow):
     def submit_from_composer(self):
         """Submits the workflow currently in the composer."""
         from ats_oss.config import settings
-        import tempfile
-        import os
+        import tempfile, os
 
-        # Use the file browser from the submit tab
         self.browse_file()
         input_uri = self.input_uri_input.text()
         if not input_uri:
             QMessageBox.warning(self, "Input Error", "An input file is required.")
             return
 
-        # Create a temporary file for the workflow
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".yaml", dir=settings.workflows_dir) as f:
             f.write(self.yaml_view.toPlainText())
             temp_workflow_name = os.path.splitext(os.path.basename(f.name))[0]
 
-        # Submit the temporary workflow
         self.submit_workflow(template_name=temp_workflow_name, input_uri=input_uri, params={})
-
-        # Clean up the temporary file
         os.remove(f.name)
-
 
     def load_template(self):
         """Loads a workflow template from a YAML file."""
@@ -505,160 +503,320 @@ class MainWindow(QMainWindow):
                 f.write(self.yaml_view.toPlainText())
 
     def populate_palette(self):
-        """Dynamically populates the palette with steps and control blocks."""
         from ats_oss.core.workflow_engine import STEP_REGISTRY
-
-        # Steps Category
         steps_category = QTreeWidgetItem(self.palette, ["Steps"])
         for step_name in sorted(STEP_REGISTRY.keys()):
-            step_item = QTreeWidgetItem(steps_category, [step_name])
-
-        # Control Flow Category
+            QTreeWidgetItem(steps_category, [step_name])
         control_category = QTreeWidgetItem(self.palette, ["Control Flow"])
-        control_blocks = ["if", "parallel", "join", "set"]
-        for block_name in control_blocks:
-            block_item = QTreeWidgetItem(control_category, [block_name])
-
+        for block_name in ["if", "else", "parallel", "join", "set"]:
+            QTreeWidgetItem(control_category, [block_name])
         self.palette.expandAll()
 
     def show_composer_view(self):
-        self.composer_view.show()
-        self.yaml_view.hide()
-        self.composer_view_radio.setChecked(True)
-        self.yaml_view_radio.setChecked(False)
+        self.composer_view.show(); self.yaml_view.hide()
+        self.composer_view_radio.setChecked(True); self.yaml_view_radio.setChecked(False)
 
     def show_yaml_view(self):
-        self.composer_view.hide()
-        self.yaml_view.show()
-        self.composer_view_radio.setChecked(False)
-        self.yaml_view_radio.setChecked(True)
+        self.composer_view.hide(); self.yaml_view.show()
+        self.composer_view_radio.setChecked(False); self.yaml_view_radio.setChecked(True)
         self.update_yaml_view()
 
     def update_canvas_from_yaml(self):
         """Parses the YAML and rebuilds the canvas tree."""
         import yaml
         self.canvas.clear()
+        self.global_params = {}
 
         try:
             yaml_str = self.yaml_view.toPlainText()
-            if not yaml_str:
-                return
-
+            if not yaml_str: return
             workflow_def = yaml.safe_load(yaml_str)
-            if not workflow_def or "steps" not in workflow_def:
-                return
+            if not workflow_def: return
 
-            def dict_to_item(parent_item, step_dict):
-                step_type = step_dict.get("type", "unknown")
-                new_item = QTreeWidgetItem(parent_item, [step_type])
-                new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
-                new_item.setData(0, Qt.ItemDataRole.UserRole, step_dict)
-
-                # Recursively add children
-                children = []
-                if "then" in step_dict:
-                    children = step_dict["then"]
-                elif "steps" in step_dict:
-                    children = step_dict["steps"]
-
-                for child_dict in children:
-                    dict_to_item(new_item, child_dict)
-
+            self.global_params = workflow_def.get("parameters", {})
             root = self.canvas.invisibleRootItem()
-            for step in workflow_def["steps"]:
-                dict_to_item(root, step)
+            for step_dict in workflow_def.get("steps", []):
+                self._dict_to_item(root, step_dict)
 
             self.canvas.expandAll()
+            self._on_canvas_selection_changed()
 
         except yaml.YAMLError as e:
             QMessageBox.warning(self, "YAML Error", f"Could not parse YAML: {e}")
 
+    def _dict_to_item(self, parent_item, step_dict):
+        """Recursively converts a YAML dictionary to a canvas item, translating to the GUI's internal data model."""
+        gui_data, name_for_display = {}, "unknown"
+
+        if "type" in step_dict:
+            name_for_display = step_dict["type"]
+            gui_data = dict(step_dict)
+        elif "if" in step_dict:
+            name_for_display = "if"
+            gui_data = {"type": "if", **step_dict}
+        elif "set" in step_dict:
+            name_for_display = "set"
+            gui_data = {"type": "set", "variable": step_dict["set"], "value": step_dict.get("value")}
+        elif "parallel" in step_dict:
+            name_for_display = "parallel"
+            gui_data = {"type": "parallel", **step_dict}
+        elif "branch" in step_dict:
+            name_for_display = step_dict["branch"]
+            gui_data = {"type": name_for_display, "_is_branch": True, **step_dict}
+            del gui_data["branch"]
+        else: return None
+
+        if gui_data.get("type") == "if" and "if" in gui_data:
+            import re
+            if_expr = gui_data["if"]
+            lufs_pattern = re.compile(r'"\${metrics\.integrated_lufs > ([-0-9.]+) or metrics\.integrated_lufs < ([-0-9.]+)}"')
+            lufs_match = lufs_pattern.match(if_expr)
+            channels_pattern = re.compile(r'"\${metrics\.channels >= parameters\.min_channels_for_downmix}"')
+            channels_match = channels_pattern.match(if_expr)
+
+            if lufs_match:
+                gui_data.update({"mode": "builder", "builder_kind": "integrated_lufs_out_of_range", "lufs_max": float(lufs_match.group(1)), "lufs_min": float(lufs_match.group(2))})
+            elif channels_match:
+                gui_data.update({"mode": "builder", "builder_kind": "channels_greater_equal"})
+            else:
+                gui_data.update({"mode": "raw", "expr_raw": if_expr})
+
+        new_item = QTreeWidgetItem(parent_item, [name_for_display])
+        new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
+        new_item.setData(0, Qt.ItemDataRole.UserRole, gui_data)
+
+        if "then" in step_dict:
+            for child in step_dict["then"]: self._dict_to_item(new_item, child)
+        if "else" in step_dict:
+            else_item = self._dict_to_item(new_item, {"type": "else"})
+            for child in step_dict["else"]: self._dict_to_item(else_item, child)
+        if "parallel" in step_dict:
+            for branch in step_dict["parallel"]: self._dict_to_item(new_item, branch)
+        if "steps" in step_dict:
+            for child in step_dict["steps"]: self._dict_to_item(new_item, child)
+
+        return new_item
+
     def update_yaml_view(self):
         """Generates YAML from the canvas and displays it."""
         import yaml
+        workflow_dict = {"name": "Composed Workflow", "parameters": self.global_params, "steps": []}
+        for i in range(self.canvas.topLevelItemCount()):
+            item = self.canvas.topLevelItem(i)
+            workflow_dict["steps"].append(self._item_to_dict(item))
 
-        def item_to_dict(item):
-            data = item.data(0, Qt.ItemDataRole.UserRole)
-            if not data:
-                return {}
-
-            # Start with the type
-            result = {"type": data["type"]}
-
-            # Add other parameters from stored data
-            for key, value in data.items():
-                if key != "type":
-                    result[key] = value
-
-            # Recursively add children for nested structures
-            children = []
-            for i in range(item.childCount()):
-                children.append(item_to_dict(item.child(i)))
-
-            if children:
-                # This is a simplistic approach. A real implementation would need
-                # to handle if/then/else, parallel branches, etc.
-                if "if" in result:
-                    result["then"] = children
-                elif "parallel" in result:
-                    result["steps"] = children
-                else:
-                    result["steps"] = children
-
-            return result
-
-        workflow_dict = {
-            "name": "Composed Workflow",
-            "steps": [item_to_dict(self.canvas.topLevelItem(i)) for i in range(self.canvas.topLevelItemCount())]
-        }
+        yaml.Dumper.ignore_aliases = lambda *args : True
 
         try:
-            yaml_str = yaml.dump(workflow_dict, sort_keys=False)
+            yaml_str = yaml.dump(workflow_dict, sort_keys=False, default_flow_style=False)
+            self._is_updating_yaml = True
             self.yaml_view.setText(yaml_str)
         except Exception as e:
             self.yaml_view.setText(f"# Error generating YAML: {e}")
+        finally:
+            self._is_updating_yaml = False
+
+    def _on_yaml_text_changed(self):
+        """Intermediate handler to prevent update loops."""
+        if not self._is_updating_yaml:
+            self.update_canvas_from_yaml()
+
+    def _item_to_dict(self, item):
+        """Recursively converts a canvas item to a dictionary for canonical YAML serialization."""
+        gui_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not gui_data: return {}
+
+        result = dict(gui_data)
+        step_type = result.pop("type", "unknown")
+
+        internal_keys = ["mode", "expr_raw", "builder_kind", "lufs_min", "lufs_max", "channels_threshold", "left_token", "operator", "right_value", "preview", "_is_branch"]
+        for key in internal_keys: result.pop(key, None)
+
+        children = [self._item_to_dict(item.child(i)) for i in range(item.childCount())]
+
+        if step_type == "if":
+            then_children, else_children = [], []
+            is_else_block = False
+            for child in children:
+                if child == {"type": "else"}:
+                    is_else_block = True; continue
+                if is_else_block: else_children.append(child)
+                else: then_children.append(child)
+
+            result["then"] = then_children
+            if else_children: result["else"] = else_children
+            final_dict = {"if": result.pop("if")}
+            final_dict.update(result)
+            return final_dict
+        elif step_type == "set":
+            final_dict = {"set": result.pop("variable")}
+            if "value" in result: final_dict["value"] = result["value"]
+            return final_dict
+        elif step_type == "parallel":
+            return {"parallel": children}
+        elif gui_data.get("_is_branch"):
+             return {"branch": step_type, "steps": children}
+        elif step_type == "else":
+            return {"type": "else"}
+        else:
+            result["type"] = step_type
+            if children: result["steps"] = children
+            return result
 
     def add_item_to_canvas(self, name):
-        """Adds a new item to the canvas."""
+        """Adds a new item with default parameters to the canvas."""
+        from .step_meta import STEP_SCHEMAS
         parent = self.canvas.currentItem() or self.canvas.invisibleRootItem()
         new_item = QTreeWidgetItem(parent, [name])
         new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
-        # Store metadata with the item
-        new_item.setData(0, Qt.ItemDataRole.UserRole, {"type": name})
 
-    def display_step_inspector(self):
-        """Displays the configuration options for the selected step."""
-        from .step_meta import STEP_METADATA
+        # Set default data for the new item based on its schema
+        data = {"type": name}
+        schema = STEP_SCHEMAS.get(name, {})
+        for field in schema.get("fields", []):
+            if "default" in field:
+                data[field["name"]] = field["default"]
+        new_item.setData(0, Qt.ItemDataRole.UserRole, data)
+        self.canvas.setCurrentItem(new_item)
+        self.update_yaml_view()
 
-        # Clear the inspector
-        for i in reversed(range(self.inspector_layout.count())):
-            self.inspector_layout.itemAt(i).widget().setParent(None)
+    def _clear_inspector(self):
+        """Removes all widgets from the inspector layout."""
+        self.inspector_widgets = {}
+        while self.inspector_layout.count():
+            child = self.inspector_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
+    def _on_canvas_selection_changed(self):
+        """Handles selection changes to show the correct inspector."""
         selected_items = self.canvas.selectedItems()
         if not selected_items:
-            self.inspector_layout.addRow(QLabel("Select a step to configure."))
-            return
+            self.display_global_parameters()
+        else:
+            self.display_step_inspector(selected_items[0])
 
-        item = selected_items[0]
-        step_type = item.data(0, Qt.ItemDataRole.UserRole)["type"]
-        params = STEP_METADATA.get(step_type, [])
+    def display_global_parameters(self):
+        """Displays the global parameters inspector."""
+        from .step_meta import GLOBAL_PARAMETERS_SCHEMA
+        self._clear_inspector()
+        self.inspector_layout.addRow(QLabel("<h3>Workflow Parameters</h3>"))
+        for field in GLOBAL_PARAMETERS_SCHEMA:
+            # Note: For global params, 'bind' acts as the 'name'
+            value = self.global_params.get(field["bind"])
+            def on_change(new_value, bind_key=field["bind"]):
+                self.global_params[bind_key] = new_value
+                self.update_yaml_view()
+            self._create_widget(field, value, on_change)
 
-        if not params:
-            self.inspector_layout.addRow(QLabel(f"No parameters for '{step_type}'."))
-            return
+    def display_step_inspector(self, item):
+        """Displays the configuration options for the selected step item."""
+        from .step_meta import STEP_SCHEMAS
+        self._clear_inspector()
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {"type": "unknown"}
+        step_type = item_data.get("type", "unknown")
+        self.inspector_layout.addRow(QLabel(f"<h3>{step_type}</h3>"))
+        schema = STEP_SCHEMAS.get(step_type, {})
 
-        for param in params:
-            widget = None
-            if param["type"] == "string":
-                widget = QLineEdit(str(param.get("default", "")))
-            elif param["type"] == "integer":
-                widget = QLineEdit(str(param.get("default", 0))) # Use QLineEdit for flexibility
-            elif param["type"] == "float":
-                widget = QLineEdit(str(param.get("default", 0.0)))
-            elif param["type"] == "combo":
-                widget = QComboBox()
-                widget.addItems(param.get("options", []))
+        for field in schema.get("fields", []):
+            value = item_data.get(field["name"])
+            def on_change(new_value, field_name=field["name"]):
+                item_data[field_name] = new_value
+                item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                self._update_widget_visibility(item_data)
+                if step_type == "if":
+                    self._update_if_preview(item, item_data)
+                self.update_yaml_view()
+            self._create_widget(field, value, on_change)
 
-            if widget:
-                self.inspector_layout.addRow(param["name"], widget)
-                # TODO: Add logic to save the value back to the item's data
+        self._update_widget_visibility(item_data)
+        if step_type == "if":
+            self._update_if_preview(item, item_data)
+
+    def _create_widget(self, field, current_value, on_change_callback):
+        """Creates and connects a widget based on a field schema."""
+        label_text = field.get("label", field["name"])
+        widget = None
+        if field["type"] == "float":
+            widget = QDoubleSpinBox()
+            if "min" in field: widget.setMinimum(field["min"])
+            if "max" in field: widget.setMaximum(field["max"])
+            if "step" in field: widget.setSingleStep(field["step"])
+            val = current_value if current_value is not None else field.get("default", 0.0)
+            widget.setValue(float(val))
+            widget.valueChanged.connect(on_change_callback)
+        elif field["type"] == "int":
+            widget = QSpinBox()
+            if "min" in field: widget.setMinimum(field["min"])
+            if "max" in field: widget.setMaximum(field["max"])
+            val = current_value if current_value is not None else field.get("default", 0)
+            widget.setValue(int(val))
+            widget.valueChanged.connect(on_change_callback)
+        elif field["type"] == "select":
+            widget = QComboBox()
+            widget.addItems(field.get("options", []))
+            if current_value: widget.setCurrentText(current_value)
+            widget.currentTextChanged.connect(on_change_callback)
+        elif field["type"] in ["text", "textarea"]:
+            widget = QLineEdit(str(current_value or '')) if field["type"] == "text" else QPlainTextEdit(str(current_value or ''))
+            widget.textChanged.connect(lambda: on_change_callback(widget.text() if isinstance(widget, QLineEdit) else widget.toPlainText()))
+        elif field["type"] == "preview":
+            widget = QLineEdit()
+            widget.setReadOnly(True)
+
+        if widget:
+            row = self.inspector_layout.addRow(label_text, widget)
+            self.inspector_widgets[field["name"]] = {"widget": widget, "row": row, "field": field}
+
+    def _update_widget_visibility(self, item_data):
+        """Shows/hides inspector widgets based on 'visible_if' rules."""
+        for name, info in self.inspector_widgets.items():
+            is_visible = True
+            if "visible_if" in info["field"]:
+                condition = info["field"]["visible_if"]
+                for key, values in condition.items():
+                    if item_data.get(key) not in values:
+                        is_visible = False
+                        break
+            if "visible_if_all" in info["field"]:
+                condition = info["field"]["visible_if_all"]
+                for key, values in condition.items():
+                    if item_data.get(key) not in values:
+                        is_visible = False
+                        break
+
+            info["widget"].setVisible(is_visible)
+            self.inspector_layout.labelForField(info["widget"]).setVisible(is_visible)
+
+    def _render_if_expression(self, item_data):
+        """Generates the YAML 'if' expression string based on inspector state."""
+        mode = item_data.get("mode")
+        if mode == "raw":
+            return item_data.get("expr_raw", "").strip()
+
+        kind = item_data.get("builder_kind")
+        if kind == "integrated_lufs_out_of_range":
+            lufs_max = item_data.get("lufs_max", -22.0)
+            lufs_min = item_data.get("lufs_min", -24.0)
+            return f'"${{metrics.integrated_lufs > {lufs_max:.1f} or metrics.integrated_lufs < {lufs_min:.1f}}}"'
+
+        if kind == "channels_greater_equal":
+            return '"${metrics.channels >= parameters.min_channels_for_downmix}"'
+
+        if kind == "custom_compare":
+            left = item_data.get("left_token", "metrics.integrated_lufs")
+            op = item_data.get("operator", ">")
+            right = item_data.get("right_value", "0").strip()
+            return f'"${{{left} {op} {right}}}"'
+
+        return ""
+
+    def _update_if_preview(self, item, item_data):
+        """Renders and displays the 'if' expression preview."""
+        if self.inspector_widgets and "preview" in self.inspector_widgets:
+            preview_widget = self.inspector_widgets["preview"]["widget"]
+            expression = self._render_if_expression(item_data)
+            preview_widget.setText(expression)
+            # Also, save the rendered expression back to the item's data for serialization
+            item_data["if"] = expression
+            item.setData(0, Qt.ItemDataRole.UserRole, item_data)
