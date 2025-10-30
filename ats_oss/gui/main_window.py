@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
     QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView, QComboBox
 )
 from PyQt6.QtCore import QTimer, Qt
-from .widgets import WorkflowCanvas, WorkflowPalette
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -389,14 +388,19 @@ class MainWindow(QMainWindow):
         composer_layout.addWidget(splitter)
 
         # Palette (Left)
-        self.palette = WorkflowPalette()
+        palette_layout = QVBoxLayout()
+        self.palette = QTreeWidget()
         self.palette.setHeaderLabel("Steps")
-        splitter.addWidget(self.palette)
+        self.add_step_button = QPushButton("Add to Workflow")
+        palette_layout.addWidget(self.palette)
+        palette_layout.addWidget(self.add_step_button)
+        palette_widget = QWidget()
+        palette_widget.setLayout(palette_layout)
+        splitter.addWidget(palette_widget)
 
         # Canvas (Center)
-        self.canvas = WorkflowCanvas()
+        self.canvas = QTreeWidget()
         self.canvas.setHeaderLabel("Workflow")
-        self.canvas.itemDropped.connect(self.add_item_to_canvas)
         self.canvas.itemSelectionChanged.connect(self.display_step_inspector)
         splitter.addWidget(self.canvas)
 
@@ -419,8 +423,19 @@ class MainWindow(QMainWindow):
         self.load_template_button.clicked.connect(self.load_template)
         self.save_template_button.clicked.connect(self.save_template)
         self.submit_composer_button.clicked.connect(self.submit_from_composer)
+        self.add_step_button.clicked.connect(self.add_selected_step_to_canvas)
 
         self.populate_palette()
+
+    def add_selected_step_to_canvas(self):
+        """Adds the selected step from the palette to the canvas."""
+        selected_items = self.palette.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        if item and item.parent(): # Ensure it's a step, not a category
+            self.add_item_to_canvas(item.text(0))
 
     def submit_from_composer(self):
         """Submits the workflow currently in the composer."""
@@ -476,14 +491,12 @@ class MainWindow(QMainWindow):
         steps_category = QTreeWidgetItem(self.palette, ["Steps"])
         for step_name in sorted(STEP_REGISTRY.keys()):
             step_item = QTreeWidgetItem(steps_category, [step_name])
-            step_item.setFlags(step_item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
 
         # Control Flow Category
         control_category = QTreeWidgetItem(self.palette, ["Control Flow"])
         control_blocks = ["if", "parallel", "join", "set"]
         for block_name in control_blocks:
             block_item = QTreeWidgetItem(control_category, [block_name])
-            block_item.setFlags(block_item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
 
         self.palette.expandAll()
 
