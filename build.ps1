@@ -36,7 +36,6 @@ if (Test-Path $BuildPath) { Remove-Item -Recurse -Force $BuildPath }
 Write-Host "Building the FastAPI server executable..."
 pyinstaller --name $ServerExeName `
     --onefile `
-    --noconsole `
     --target-architecture arm64 `
     --distpath $DistPath `
     --workpath $BuildPath `
@@ -45,7 +44,7 @@ pyinstaller --name $ServerExeName `
     --hidden-import "ats_oss.api.routes_workflows" `
     --hidden-import "ats_oss.api.routes_jobs" `
     --version-file $VersionFile `
-    ats_oss/main.py
+    ats_oss/api/server.py
 
 # Build the PyQt6 GUI
 Write-Host "Building the PyQt6 GUI executable..."
@@ -59,6 +58,6 @@ pyinstaller --name $GuiExeName `
     --add-data "ats_oss/workflows;ats_oss/workflows" `
     --add-data "config.yaml;." `
     --version-file $VersionFile `
-    ats_oss/main.py
+    ats_oss/gui/app.py
 
 Write-Host "Build complete. Executables are in the '$DistPath' directory."
