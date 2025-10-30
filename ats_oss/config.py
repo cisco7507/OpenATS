@@ -23,9 +23,10 @@ class Config:
     def load_config(self):
         self.bundle_dir = get_bundle_dir()
 
-        # In bundle mode, config and workflows are in the root.
-        # In source mode, they are in ats_oss/
-        self.config_path = self.bundle_dir / "ats_oss" / "config" / "config.yaml"
+        # The paths are relative to the bundle_dir, which is the project root
+        # in source mode, and the _MEIPASS directory in bundled mode.
+        # The build script places the files in the same relative locations.
+        self.config_path = self.bundle_dir / "config.yaml"
         self.workflows_dir = self.bundle_dir / "ats_oss" / "workflows"
 
         with open(self.config_path, "r") as f:
