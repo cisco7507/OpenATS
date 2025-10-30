@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
         layout.addRow(self.submit_button)
 
         self.browse_button.clicked.connect(self.browse_file)
-        self.submit_button.clicked.connect(self.submit_workflow)
+        self.submit_button.clicked.connect(lambda: self.submit_workflow())
         self.template_combo.currentTextChanged.connect(self.on_workflow_selected)
         self.format_combo.currentTextChanged.connect(self.on_format_selected)
 
