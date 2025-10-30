@@ -29,8 +29,8 @@ class Config:
             # In bundled mode, the build script places config.yaml at the bundle root.
             self.config_path = self.bundle_dir / "config.yaml"
         else:
-            # In source mode, the config is at the project root, not in the package.
-            self.config_path = self.bundle_dir / "config.yaml"
+            # In source mode, the config is nested inside the package.
+            self.config_path = self.bundle_dir / "ats_oss" / "config" / "config.yaml"
 
         # The workflows directory is always inside the package directory.
         self.workflows_dir = self.bundle_dir / "ats_oss" / "workflows"

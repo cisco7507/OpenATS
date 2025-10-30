@@ -40,9 +40,8 @@ pyinstaller --name $ServerExeName `
     --distpath $DistPath `
     --workpath $BuildPath `
     --add-data "ats_oss/workflows;ats_oss/workflows" `
-    --add-data "config.yaml;." `
+    --add-data "ats_oss/config/config.yaml;." `
     --hidden-import "ats_oss.api.routes_workflows" `
-    --hidden-import "ats_oss.api.routes_jobs" `
     --version-file $VersionFile `
     ats_oss/api/server.py
 
@@ -56,7 +55,7 @@ pyinstaller --name $GuiExeName `
     --workpath $BuildPath `
     --icon $IconPath `
     --add-data "ats_oss/workflows;ats_oss/workflows" `
-    --add-data "config.yaml;." `
+    --add-data "ats_oss/config/config.yaml;." `
     --version-file $VersionFile `
     ats_oss/gui/app.py
 
