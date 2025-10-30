@@ -284,35 +284,28 @@ class MainWindow(QMainWindow):
         self.workflow_details.clear()
 
     def browse_file(self):
-        """Opens a file dialog to select one or more audio files."""
+        """Opens a file dialog to select an audio file."""
         options = QFileDialog.Option.DontUseNativeDialog
-        file_paths, _ = QFileDialog.getOpenFileNames(
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Audio File(s)",
+            "Select Audio File",
             "", # Start directory
             "Audio Files (*.wav *.mp3 *.flac *.aac);;All Files (*)",
             options=options
         )
-        if file_paths:
-            # Join multiple files with a semicolon for batch processing
-            self.input_uri_input.setText(";".join(file_paths))
+        if file_path:
+            self.input_uri_input.setText(file_path)
 
     def submit_workflow(self, template_name=None, input_uri=None, params=None):
-        """Handles the submission of a new workflow, including batch submission."""
+        """Submits a new workflow to the server."""
         if template_name is None:
             template_name = self.template_combo.currentText()
 
-        input_uris_str = input_uri if input_uri is not None else self.input_uri_input.text()
+        if input_uri is None:
+            input_uri = self.input_uri_input.text()
 
-        if not template_name or not input_uris_str:
-            QMessageBox.warning(self, "Input Error", "Both workflow template and input file(s) are required.")
-            return
-
-        # Split the input string by semicolons to support batch submission
-        input_files = [uri.strip() for uri in input_uris_str.split(';') if uri.strip()]
-
-        if not input_files:
-            QMessageBox.warning(self, "Input Error", "No valid input files specified.")
+        if not template_name or not input_uri:
+            QMessageBox.warning(self, "Input Error", "Both workflow template and input file are required.")
             return
 
         base_params = params
@@ -329,46 +322,27 @@ class MainWindow(QMainWindow):
                 else:
                     base_params["bit_depth"] = int(self.bit_depth_input.text()) if self.bit_depth_input.text() else None
 
-        success_count = 0
-        error_count = 0
-        error_messages = []
+        payload = {
+            "template_name": template_name,
+            "input_uri": input_uri,
+            "params": base_params,
+        }
+        headers = {"Content-Type": "application/json"}
 
-        for file_uri in input_files:
-            payload = {
-                "template_name": template_name,
-                "input_uri": file_uri,
-                "params": base_params,
-            }
-            headers = {"Content-Type": "application/json"}
-
-            try:
-                response = requests.post(
-                    "http://127.0.0.1:8650/workflows/submitWorkflow",
-                    json=payload,
-                    headers=headers,
-                )
-                if response.status_code == 200:
-                    success_count += 1
-                else:
-                    error_count += 1
-                    error_messages.append(f"File '{file_uri}': {response.text}")
-            except requests.exceptions.RequestException as e:
-                error_count += 1
-                error_messages.append(f"File '{file_uri}': Connection Error - {e}")
-
-        # Display summary message
-        if success_count > 0:
-             self.refresh_workflow_list()
-             self.tabs.setCurrentWidget(self.monitor_tab)
-
-        summary_message = f"Batch submission complete.\n\nSuccessfully submitted: {success_count}\nFailed: {error_count}"
-        if error_messages:
-            summary_message += "\n\nErrors:\n" + "\n".join(error_messages)
-
-        if error_count > 0:
-            QMessageBox.warning(self, "Batch Submission Report", summary_message)
-        else:
-            QMessageBox.information(self, "Batch Submission Report", summary_message)
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8650/workflows/submitWorkflow",
+                json=payload,
+                headers=headers,
+            )
+            if response.status_code == 200:
+                QMessageBox.information(self, "Success", "Workflow submitted successfully!")
+                self.refresh_workflow_list()
+                self.tabs.setCurrentWidget(self.monitor_tab)
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to submit workflow: {response.text}")
+        except requests.exceptions.RequestException as e:
+            QMessageBox.critical(self, "Connection Error", f"Could not connect to the server: {e}")
 
     def check_server_status(self):
         try:
