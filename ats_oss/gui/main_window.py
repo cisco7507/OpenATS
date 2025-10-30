@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QFileDialog, QHBoxLayout, QAbstractItemView, QComboBox
 )
 from PyQt6.QtCore import QTimer, Qt
-from .widgets import WorkflowCanvas
+from .widgets import WorkflowCanvas, WorkflowPalette
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -389,9 +389,8 @@ class MainWindow(QMainWindow):
         composer_layout.addWidget(splitter)
 
         # Palette (Left)
-        self.palette = QTreeWidget()
+        self.palette = WorkflowPalette()
         self.palette.setHeaderLabel("Steps")
-        self.palette.setDragEnabled(True)
         splitter.addWidget(self.palette)
 
         # Canvas (Center)
