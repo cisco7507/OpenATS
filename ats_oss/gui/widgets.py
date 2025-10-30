@@ -8,7 +8,7 @@ class WorkflowCanvas(QTreeWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True) # Fix for macOS drag-drop issue
         self.setDragDropMode(self.DragDropMode.InternalMove)
 
     def dragEnterEvent(self, event):
