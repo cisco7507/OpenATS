@@ -402,7 +402,14 @@ class MainWindow(QMainWindow):
         self.canvas = QTreeWidget()
         self.canvas.setHeaderLabel("Workflow")
         self.canvas.itemSelectionChanged.connect(self.display_step_inspector)
-        splitter.addWidget(self.canvas)
+
+        canvas_layout = QVBoxLayout()
+        self.remove_step_button = QPushButton("Remove Selected Item")
+        canvas_layout.addWidget(self.canvas)
+        canvas_layout.addWidget(self.remove_step_button)
+        canvas_widget = QWidget()
+        canvas_widget.setLayout(canvas_layout)
+        splitter.addWidget(canvas_widget)
 
         # Inspector (Right)
         self.inspector = QWidget()
@@ -424,8 +431,20 @@ class MainWindow(QMainWindow):
         self.save_template_button.clicked.connect(self.save_template)
         self.submit_composer_button.clicked.connect(self.submit_from_composer)
         self.add_step_button.clicked.connect(self.add_selected_step_to_canvas)
+        self.remove_step_button.clicked.connect(self.remove_selected_item)
 
         self.populate_palette()
+
+    def remove_selected_item(self):
+        """Removes the selected item from the canvas."""
+        selected_items = self.canvas.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        # Get the parent of the item, or the invisible root if it's a top-level item
+        parent = item.parent() or self.canvas.invisibleRootItem()
+        parent.removeChild(item)
 
     def add_selected_step_to_canvas(self):
         """Adds the selected step from the palette to the canvas."""
@@ -465,8 +484,9 @@ class MainWindow(QMainWindow):
     def load_template(self):
         """Loads a workflow template from a YAML file."""
         from ats_oss.config import settings
+        options = QFileDialog.Option.DontUseNativeDialog
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Load Workflow Template", str(settings.workflows_dir), "YAML Files (*.yaml)"
+            self, "Load Workflow Template", str(settings.workflows_dir), "YAML Files (*.yaml)", options=options
         )
         if file_path:
             with open(file_path, "r") as f:
@@ -476,8 +496,9 @@ class MainWindow(QMainWindow):
     def save_template(self):
         """Saves the current workflow to a YAML file."""
         from ats_oss.config import settings
+        options = QFileDialog.Option.DontUseNativeDialog
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Workflow Template", str(settings.workflows_dir), "YAML Files (*.yaml)"
+            self, "Save Workflow Template", str(settings.workflows_dir), "YAML Files (*.yaml)", options=options
         )
         if file_path:
             with open(file_path, "w") as f:
